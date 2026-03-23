@@ -457,7 +457,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     await appWindow.onDragDropEvent(async (event) => {
       if (event.payload.type === "over") {
         document.body.classList.add("drag-over");
-      } else if (event.payload.type === "leave" || event.payload.type === "cancel") {
+      } else if (event.payload.type === "leave") {
         document.body.classList.remove("drag-over");
       } else if (event.payload.type === "drop") {
         document.body.classList.remove("drag-over");
