@@ -24,6 +24,9 @@ import { ask } from "@tauri-apps/plugin-dialog";
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
+const appWindow = getCurrentWindow();
+let unlistenClose: (() => void) | null = null;
+
 let filePath: string | null = null;
 let outputPath: string | null = null;
 let isDirty = false;
@@ -54,7 +57,7 @@ document.getElementById("viewer-container")!.style.display = "none";
         document.getElementById("toolbar-container")!.style.display = "none";
         await loadPdf(startup.filePath);
         window.print();
-        await getCurrentWindow().close();
+        await appWindow.close();
       } else {
         await loadPdf(startup.filePath);
       }
@@ -95,6 +98,32 @@ function showToast(msg: string, isError = false): void {
 
 function setDirty(val: boolean): void {
   isDirty = val;
+  if (val) {
+    void registerCloseGuard();
+  } else {
+    unregisterCloseGuard();
+  }
+}
+
+async function registerCloseGuard(): Promise<void> {
+  if (unlistenClose) return;
+  unlistenClose = await appWindow.onCloseRequested(async (event) => {
+    event.preventDefault();
+    const ok = await ask("Close without saving?", {
+      title: "Unsaved changes",
+      kind: "warning",
+    });
+    if (ok) {
+      unlistenClose?.();
+      unlistenClose = null;
+      await appWindow.destroy();
+    }
+  });
+}
+
+function unregisterCloseGuard(): void {
+  unlistenClose?.();
+  unlistenClose = null;
 }
 
 async function renderCurrentPage(): Promise<void> {
@@ -437,23 +466,10 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   }
 });
 
-// ── Window close guard + drag-drop ────────────────────────────────────────────
+// ── Drag-drop ─────────────────────────────────────────────────────────────────
 
 (async () => {
   try {
-    const appWindow = getCurrentWindow();
-
-    await appWindow.onCloseRequested(async (event) => {
-      if (isDirty) {
-        event.preventDefault();
-        const ok = await ask("Close without saving?", {
-          title: "Unsaved changes",
-          kind: "warning",
-        });
-        if (ok) await appWindow.destroy();
-      }
-    });
-
     await appWindow.onDragDropEvent(async (event) => {
       if (event.payload.type === "over") {
         document.body.classList.add("drag-over");
@@ -473,11 +489,5 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     });
   } catch {
     // Fallback for dev server / browser preview
-    window.addEventListener("beforeunload", (e) => {
-      if (isDirty) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    });
   }
 })();
