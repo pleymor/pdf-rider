@@ -11,6 +11,7 @@ import {
   openPdfDialog,
   savePdfDialog,
   saveAnnotatedPdf,
+  exportAnnotatedPdf,
   readAnnotations,
 } from "./tauri-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -125,6 +126,18 @@ async function saveFile(forceDialog: boolean): Promise<void> {
   }
 }
 
+async function exportFile(): Promise<void> {
+  if (!filePath) return;
+  const picked = await savePdfDialog(filePath);
+  if (!picked) return;
+  try {
+    await exportAnnotatedPdf(filePath, picked, store.getAll());
+    showToast("Exported.");
+  } catch (err: unknown) {
+    showToast(`Export failed: ${err}`, true);
+  }
+}
+
 async function confirmUnsaved(): Promise<boolean> {
   if (!isDirty) return true;
   return ask("Discard unsaved changes and continue?", {
@@ -147,6 +160,10 @@ toolbar.on(async (e) => {
 
     case "save-as":
       await saveFile(true);
+      break;
+
+    case "export":
+      await exportFile();
       break;
 
     case "zoom-in":

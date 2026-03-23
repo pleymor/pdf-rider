@@ -11,6 +11,7 @@ type ToolbarEvent =
   | { type: "open" }
   | { type: "save" }
   | { type: "save-as" }
+  | { type: "export" }
   | { type: "zoom-in" }
   | { type: "zoom-out" }
   | { type: "page-prev" }
@@ -198,12 +199,14 @@ export class Toolbar {
     }
     this.el.append(this.sep());
 
-    // Save / Save As
-    const saveBtn = this.btn("Save", "Save PDF");
+    // Save / Save As / Export
+    const saveBtn = this.btn("Save", "Save (keeps annotations editable)");
     saveBtn.addEventListener("click", () => this.emit({ type: "save" }));
-    const saveAsBtn = this.btn("Save As…", "Save PDF as…");
+    const saveAsBtn = this.btn("Save As…", "Save as… (keeps annotations editable)");
     saveAsBtn.addEventListener("click", () => this.emit({ type: "save-as" }));
-    this.el.append(saveBtn, saveAsBtn);
+    const exportBtn = this.btn("Export…", "Export flat PDF (annotations visible in all viewers)");
+    exportBtn.addEventListener("click", () => this.emit({ type: "export" }));
+    this.el.append(saveBtn, saveAsBtn, exportBtn);
   }
 
   private setActiveTool(tool: ToolKind): void {
