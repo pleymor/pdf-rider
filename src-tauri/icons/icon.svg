@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E53935"/>
+      <stop offset="100%" stop-color="#B71C1C"/>
+    </linearGradient>
+    <linearGradient id="foldGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#C62828"/>
+      <stop offset="100%" stop-color="#8E1318"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="20" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Document body -->
+  <path d="M192 80 L672 80 L832 240 L832 880 C832 916 803 944 768 944 L256 944 C220 944 192 916 192 880 Z"
+        fill="url(#bgGrad)" filter="url(#shadow)"/>
+
+  <!-- Folded corner -->
+  <path d="M672 80 L672 176 C672 212 700 240 736 240 L832 240 Z"
+        fill="url(#foldGrad)"/>
+
+  <!-- Horizontal lines representing text -->
+  <rect x="296" y="360" width="432" height="24" rx="12" fill="rgba(255,255,255,0.35)"/>
+  <rect x="296" y="420" width="360" height="24" rx="12" fill="rgba(255,255,255,0.35)"/>
+  <rect x="296" y="480" width="400" height="24" rx="12" fill="rgba(255,255,255,0.35)"/>
+
+  <!-- "PDF" text -->
+  <text x="512" y="740" text-anchor="middle"
+        font-family="Arial, Helvetica, sans-serif" font-weight="900"
+        font-size="260" fill="#FFFFFF" letter-spacing="12">
+    PDF
+  </text>
+</svg>
