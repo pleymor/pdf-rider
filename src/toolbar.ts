@@ -159,7 +159,7 @@ export class Toolbar {
     // Drawing tools
     const tools: [ToolKind, string, string][] = [
       ["rect", "▭", "Rectangle"],
-      ["circle", "○", "Circle"],
+      ["circle", "◯", "Circle"],
       ["text", "T", "Text"],
       ["signature", "✍", "Signature"],
     ];
