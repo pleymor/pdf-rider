@@ -47,6 +47,26 @@ export class AnnotationStore {
     return result;
   }
 
+  bringToFront(ann: Annotation): void {
+    const list = this.store.get(ann.page);
+    if (!list) return;
+    const idx = list.indexOf(ann);
+    if (idx !== -1 && idx < list.length - 1) {
+      list.splice(idx, 1);
+      list.push(ann);
+    }
+  }
+
+  sendToBack(ann: Annotation): void {
+    const list = this.store.get(ann.page);
+    if (!list) return;
+    const idx = list.indexOf(ann);
+    if (idx > 0) {
+      list.splice(idx, 1);
+      list.unshift(ann);
+    }
+  }
+
   clear(): void {
     this.store.clear();
   }

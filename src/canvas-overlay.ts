@@ -14,9 +14,10 @@ import {
   type ToolKind,
 } from "./models";
 
-type AnnotationCreatedHandler = (ann: Annotation) => void;
-type AnnotationMovedHandler   = (ann: Annotation) => void;
-type AnnotationRemovedHandler = (ann: Annotation) => void;
+type AnnotationCreatedHandler  = (ann: Annotation) => void;
+type AnnotationMovedHandler    = (ann: Annotation) => void;
+type AnnotationRemovedHandler  = (ann: Annotation) => void;
+type AnnotationReorderHandler  = (ann: Annotation, dir: "front" | "back") => void;
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 const HANDLE_R = 4; // half-size of handle squares in px
@@ -62,9 +63,10 @@ export class CanvasOverlay {
   private scale = 1.5;
 
   // ── Callbacks ───────────────────────────────────────────────────────────────
-  private createdHandlers: AnnotationCreatedHandler[] = [];
-  private movedHandlers:   AnnotationMovedHandler[]   = [];
-  private removedHandlers: AnnotationRemovedHandler[] = [];
+  private createdHandlers:  AnnotationCreatedHandler[]  = [];
+  private movedHandlers:    AnnotationMovedHandler[]    = [];
+  private removedHandlers:  AnnotationRemovedHandler[]  = [];
+  private reorderHandlers:  AnnotationReorderHandler[]  = [];
 
   private committed: Annotation[] = [];
   /** Annotations already burned into the PDF content stream — rendered by
@@ -89,9 +91,10 @@ export class CanvasOverlay {
     window.addEventListener("keydown", this.onKeyDown);
   }
 
-  onAnnotationCreated(h: AnnotationCreatedHandler): void { this.createdHandlers.push(h); }
-  onAnnotationMoved  (h: AnnotationMovedHandler):   void { this.movedHandlers.push(h); }
-  onAnnotationRemoved(h: AnnotationRemovedHandler): void { this.removedHandlers.push(h); }
+  onAnnotationCreated (h: AnnotationCreatedHandler):  void { this.createdHandlers.push(h); }
+  onAnnotationMoved   (h: AnnotationMovedHandler):    void { this.movedHandlers.push(h); }
+  onAnnotationRemoved (h: AnnotationRemovedHandler):  void { this.removedHandlers.push(h); }
+  onAnnotationReordered(h: AnnotationReorderHandler): void { this.reorderHandlers.push(h); }
 
   /** Mark these annotations as already burned into the PDF content stream.
    *  The overlay will skip rendering them to avoid visual doubling — they are
@@ -111,9 +114,14 @@ export class CanvasOverlay {
     this.burnedAnns.delete(ann);
   }
 
-  private emit       (a: Annotation): void { this.createdHandlers.forEach(h => h(a)); }
-  private emitMoved  (a: Annotation): void { this.movedHandlers.forEach(h => h(a)); }
-  private emitRemoved(a: Annotation): void { this.removedHandlers.forEach(h => h(a)); }
+  private emit          (a: Annotation): void { this.createdHandlers.forEach(h => h(a)); }
+  private emitMoved     (a: Annotation): void { this.movedHandlers.forEach(h => h(a)); }
+  private emitRemoved   (a: Annotation): void { this.removedHandlers.forEach(h => h(a)); }
+  private emitReordered (a: Annotation, dir: "front" | "back"): void {
+    this.reorderHandlers.forEach(h => h(a, dir));
+  }
+
+  get currentTool(): ToolKind { return this.activeTool; }
 
   setStyle(style: ActiveToolState): void {
     this.style = { ...style };
@@ -706,6 +714,16 @@ export class CanvasOverlay {
     else if (hit?.kind === "rect" || hit?.kind === "circle") this.handleShapeEdit(hit, e.offsetX, e.offsetY);
   };
 
+  private reorderAnnotation(ann: Annotation, dir: "front" | "back"): void {
+    const idx = this.committed.indexOf(ann);
+    if (idx === -1) return;
+    this.committed.splice(idx, 1);
+    if (dir === "front") this.committed.push(ann);
+    else this.committed.unshift(ann);
+    this.redrawCommitted();
+    this.emitReordered(ann, dir);
+  }
+
   private handleTextEdit(ann: TextAnnotation): void {
     const container = document.getElementById("viewer-container")!;
     const { scale, pageHeightPt } = this;
@@ -867,6 +885,13 @@ export class CanvasOverlay {
     colorInput.addEventListener("input", apply);
     sizeInput.addEventListener("change", apply);
 
+    // ── Layer order ──
+    const frontBtn = toggleBtn("↑", "Mettre au premier plan", false);
+    const backBtn  = toggleBtn("↓", "Envoyer en arrière-plan", false);
+    frontBtn.addEventListener("click", () => { this.reorderAnnotation(ann, "front"); pop.remove(); });
+    backBtn.addEventListener ("click", () => { this.reorderAnnotation(ann, "back");  pop.remove(); });
+    pop.appendChild(row([label("Ordre"), frontBtn, backBtn]));
+
     const dismiss = (ev: MouseEvent): void => {
       if (!pop.contains(ev.target as Node)) {
         pop.remove();
@@ -913,6 +938,15 @@ export class CanvasOverlay {
     colorInput.addEventListener("input", apply);
     strokeInput.addEventListener("change", apply);
 
+    const frontBtn = document.createElement("button");
+    frontBtn.textContent = "↑"; frontBtn.title = "Mettre au premier plan";
+    frontBtn.style.cssText = "width:26px;height:24px;border:1px solid #555;border-radius:3px;background:#3a3a3a;color:#e8e8e8;cursor:pointer;font-size:12px;padding:0;";
+    const backBtn = document.createElement("button");
+    backBtn.textContent = "↓"; backBtn.title = "Envoyer en arrière-plan";
+    backBtn.style.cssText = "width:26px;height:24px;border:1px solid #555;border-radius:3px;background:#3a3a3a;color:#e8e8e8;cursor:pointer;font-size:12px;padding:0;";
+    frontBtn.addEventListener("click", () => { this.reorderAnnotation(ann, "front"); pop.remove(); });
+    backBtn.addEventListener ("click", () => { this.reorderAnnotation(ann, "back");  pop.remove(); });
+
     const dismiss = (ev: MouseEvent): void => {
       if (!pop.contains(ev.target as Node)) {
         pop.remove();
@@ -920,7 +954,7 @@ export class CanvasOverlay {
       }
     };
     setTimeout(() => document.addEventListener("mousedown", dismiss), 0);
-    pop.append(colorInput, strokeLabel, strokeInput);
+    pop.append(colorInput, strokeLabel, strokeInput, frontBtn, backBtn);
     container.appendChild(pop);
     colorInput.focus();
   }

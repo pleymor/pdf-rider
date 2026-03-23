@@ -257,6 +257,12 @@ overlay.onAnnotationRemoved((ann: Annotation) => {
   setDirty(true);
 });
 
+overlay.onAnnotationReordered((ann: Annotation, dir) => {
+  if (dir === "front") store.bringToFront(ann);
+  else store.sendToBack(ann);
+  setDirty(true);
+});
+
 // ── Signature events ──────────────────────────────────────────────────────────
 
 sigModal.onSignatureReady((imageData: string) => {
@@ -284,12 +290,16 @@ document.getElementById("viewer-container")!.addEventListener("click", (e: Mouse
   toolbar.clearActiveTool();
 });
 
-// Escape cancels pending signature
+// Escape cancels pending signature or deselects active drawing tool
 window.addEventListener("keydown", (e: KeyboardEvent) => {
-  if (e.key === "Escape" && pendingSignature) {
+  if (e.key !== "Escape") return;
+  if (pendingSignature) {
     pendingSignature = null;
     document.getElementById("viewer-container")!.style.cursor = "";
     showToast("Signature placement cancelled.");
+  } else if (overlay.currentTool !== "select") {
+    overlay.setTool("select");
+    toolbar.clearActiveTool();
   }
 });
 
