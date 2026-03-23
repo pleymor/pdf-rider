@@ -5,6 +5,10 @@ description = "A simple, lightweight PDF reader with annotations and signing"
 authors = []
 edition = "2021"
 
+[[bin]]
+name = "pdf-reader-portable"
+path = "src/main.rs"
+
 [lib]
 name = "pdf_reader_lib"
 crate-type = ["rlib"]
