@@ -240,11 +240,10 @@ toolbar.on(async (e) => {
 
     case "style-change":
       Object.assign(toolState, e.style); // always persist for next annotation
+      overlay.setStyle(toolState);       // always sync overlay draw style
       if (editingTextAnn) {
         overlay.applyTextAnnotationStyle(editingTextAnn, e.style);
         setDirty(true);
-      } else {
-        overlay.setStyle(toolState);
       }
       break;
 
