@@ -18,6 +18,7 @@ import {
   getStartupArgs,
   checkPdfAssociation,
   registerPdfHandler,
+  registerPrintVerb,
 } from "./tauri-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -50,6 +51,8 @@ document.getElementById("viewer-container")!.style.display = "none";
 
 (async () => {
   try {
+    void registerPrintVerb(); // always register print verb silently
+
     const startup = await getStartupArgs();
 
     if (startup.filePath) {

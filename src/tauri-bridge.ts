@@ -69,6 +69,11 @@ export async function registerPdfHandler(): Promise<void> {
   return invoke<void>("register_pdf_handler");
 }
 
+/** Silently registers the print verb under both ProgIDs (called at every startup). */
+export async function registerPrintVerb(): Promise<void> {
+  return invoke<void>("register_print_verb");
+}
+
 /** Opens Windows Settings → Default Apps. */
 export async function openDefaultAppsSettings(): Promise<void> {
   return invoke<void>("open_default_apps_settings");

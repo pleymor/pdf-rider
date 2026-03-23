@@ -44,6 +44,7 @@ pub fn run() {
             commands::shell::get_startup_args,
             commands::shell::check_pdf_association,
             commands::shell::register_pdf_handler,
+            commands::shell::register_print_verb,
             commands::shell::open_default_apps_settings,
         ])
         .run(tauri::generate_context!())

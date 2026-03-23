@@ -84,11 +84,79 @@ pub fn register_pdf_handler() -> Result<(), String> {
             .set_value("", &"com.pdfreader.app")
             .map_err(|e| e.to_string())?;
 
+        // Also register print verb under Applications\pdf-reader.exe (used when
+        // Windows sets the default via Settings → Default Apps, which ignores our
+        // ProgID and uses Applications\<exe-name> instead).
+        let exe_name = std::path::Path::new(&exe)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "pdf-reader.exe".to_string());
+        let app_key_path = format!(r"Software\Classes\Applications\{exe_name}");
+        let (app_key, _) = hkcu
+            .create_subkey(&app_key_path)
+            .map_err(|e| e.to_string())?;
+        let (app_print_cmd, _) = app_key
+            .create_subkey(r"shell\print\command")
+            .map_err(|e| e.to_string())?;
+        app_print_cmd
+            .set_value("", &format!("\"{exe}\" --print \"%1\""))
+            .map_err(|e| e.to_string())?;
+
         Ok(())
     }
     #[cfg(not(target_os = "windows"))]
     {
         Err("Registration is only supported on Windows".to_string())
+    }
+}
+
+/// Registers only the print verb (silent, no prompt needed).
+/// Called at every startup so Explorer's context menu is always available
+/// regardless of how the default-app association was set.
+#[tauri::command]
+pub fn register_print_verb() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::HKEY_CURRENT_USER;
+        use winreg::RegKey;
+
+        let exe = std::env::current_exe()
+            .map_err(|e| e.to_string())?
+            .to_string_lossy()
+            .to_string();
+
+        let exe_name = std::path::Path::new(&exe)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "pdf-reader.exe".to_string());
+
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+
+        // Under our ProgID
+        let (progid_print, _) = hkcu
+            .create_subkey(format!(
+                r"Software\Classes\com.pdfreader.app\shell\print\command"
+            ))
+            .map_err(|e| e.to_string())?;
+        progid_print
+            .set_value("", &format!("\"{exe}\" --print \"%1\""))
+            .map_err(|e| e.to_string())?;
+
+        // Under Applications\<exe> (used when default set via Windows Settings)
+        let (app_print, _) = hkcu
+            .create_subkey(format!(
+                r"Software\Classes\Applications\{exe_name}\shell\print\command"
+            ))
+            .map_err(|e| e.to_string())?;
+        app_print
+            .set_value("", &format!("\"{exe}\" --print \"%1\""))
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(())
     }
 }
 
