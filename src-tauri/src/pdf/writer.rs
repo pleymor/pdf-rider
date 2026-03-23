@@ -9,54 +9,58 @@ use super::models::{
     TextAnnotation,
 };
 
-// ── Annotation JSON storage ───────────────────────────────────────────────────
+// ── Annotation metadata (JSON + stream-ID tracking) ──────────────────────────
 
-/// Serialize `annotations` to JSON and store them in the PDF catalog under the
-/// `CCAnnot` key. Any previously stored entry is replaced.
-/// Annotations are NOT burned into content streams; they remain fully editable.
-pub fn store_annotations(doc: &mut Document, annotations: &[Annotation]) -> Result<(), String> {
-    let json = serde_json::to_string(annotations).map_err(|e| e.to_string())?;
-    let stream = Stream::new(dictionary! {}, json.into_bytes());
-    let stream_id = doc.add_object(Object::Stream(stream));
+use serde::{Deserialize, Serialize};
 
-    let catalog_id = doc
-        .trailer
+/// Stored in the PDF catalog under `CCAnnot`.
+/// Holds the editable annotation data AND the object IDs of the burned content
+/// streams so they can be updated in-place on re-save (preventing accumulation).
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct AnnotationMeta {
+    pub annotations: Vec<Annotation>,
+    /// Per-page annotation stream object IDs: page_num → [object_id, generation].
+    pub stream_ids: HashMap<u32, [u32; 2]>,
+}
+
+fn catalog_id(doc: &Document) -> Result<ObjectId, String> {
+    doc.trailer
         .get(b"Root")
         .map_err(|_| "No Root in trailer".to_string())?
         .as_reference()
-        .map_err(|_| "Root is not a reference".to_string())?;
+        .map_err(|_| "Root is not a reference".to_string())
+}
 
-    let catalog = doc.get_object_mut(catalog_id).map_err(|e| e.to_string())?;
+/// Read annotation metadata from the `CCAnnot` catalog entry.
+/// Returns a default (empty) meta if the entry is absent or unreadable.
+pub fn load_meta(doc: &Document) -> AnnotationMeta {
+    let Ok(cat_id) = catalog_id(doc) else { return AnnotationMeta::default() };
+    let Ok(cat)    = doc.get_object(cat_id) else { return AnnotationMeta::default() };
+    let Ok(dict)   = cat.as_dict() else { return AnnotationMeta::default() };
+
+    let Ok(Object::Reference(meta_ref)) = dict.get(b"CCAnnot") else {
+        return AnnotationMeta::default();
+    };
+    let Ok(obj) = doc.get_object(*meta_ref) else { return AnnotationMeta::default() };
+    let Object::Stream(stream) = obj else { return AnnotationMeta::default() };
+    let Ok(json) = String::from_utf8(stream.content.clone()) else {
+        return AnnotationMeta::default();
+    };
+    serde_json::from_str(&json).unwrap_or_default()
+}
+
+/// Serialize `meta` and store it in the PDF catalog under `CCAnnot`.
+pub fn save_meta(doc: &mut Document, meta: &AnnotationMeta) -> Result<(), String> {
+    let json      = serde_json::to_string(meta).map_err(|e| e.to_string())?;
+    let stream    = Stream::new(dictionary! {}, json.into_bytes());
+    let stream_id = doc.add_object(Object::Stream(stream));
+
+    let cat_id  = catalog_id(doc)?;
+    let catalog = doc.get_object_mut(cat_id).map_err(|e| e.to_string())?;
     if let Object::Dictionary(d) = catalog {
         d.set("CCAnnot", Object::Reference(stream_id));
     }
     Ok(())
-}
-
-/// Read and deserialize annotations from the `CCAnnot` catalog entry.
-/// Returns an empty `Vec` if the file has no stored annotations.
-pub fn load_annotations(doc: &Document) -> Result<Vec<Annotation>, String> {
-    let catalog_id = doc
-        .trailer
-        .get(b"Root")
-        .map_err(|_| "No Root in trailer".to_string())?
-        .as_reference()
-        .map_err(|_| "Root is not a reference".to_string())?;
-
-    let catalog = doc.get_object(catalog_id).map_err(|e| e.to_string())?;
-    let dict = catalog.as_dict().map_err(|e| e.to_string())?;
-
-    let annot_ref = match dict.get(b"CCAnnot") {
-        Ok(Object::Reference(id)) => *id,
-        _ => return Ok(vec![]),
-    };
-
-    let stream_obj = doc.get_object(annot_ref).map_err(|e| e.to_string())?;
-    if let Object::Stream(stream) = stream_obj {
-        let json = String::from_utf8(stream.content.clone()).map_err(|e| e.to_string())?;
-        return serde_json::from_str::<Vec<Annotation>>(&json).map_err(|e| e.to_string());
-    }
-    Err("CCAnnot is not a stream".to_string())
 }
 
 // ── PDF operator builders ─────────────────────────────────────────────────────
@@ -416,11 +420,12 @@ fn add_xobject_to_page(
 }
 
 /// Append `new_ops` as an additional content stream to the page.
+/// Returns the `ObjectId` of the newly created stream.
 fn append_content_stream(
     doc: &mut Document,
     page_id: ObjectId,
     new_ops: Vec<u8>,
-) -> Result<(), String> {
+) -> Result<ObjectId, String> {
     let new_stream = Stream::new(dictionary! {}, new_ops);
     let new_id = doc.add_object(Object::Stream(new_stream));
 
@@ -445,17 +450,25 @@ fn append_content_stream(
         d.set("Contents", Object::Array(refs));
     }
 
-    Ok(())
+    Ok(new_id)
 }
 
 // ── Public entry point ────────────────────────────────────────────────────────
 
 /// Write all annotations for a single page into the document.
+///
+/// If `existing_stream_id` is `Some`, the operators are written into that
+/// existing stream object in-place (prevents cumulative burn layers on re-save).
+/// Otherwise a new content stream is appended.
+///
+/// Returns the `ObjectId` of the stream that was written, or `None` if there
+/// were no annotations and no existing stream to clear.
 pub fn write_annotations_for_page(
     doc: &mut Document,
     page_id: ObjectId,
     annotations: &[Annotation],
-) -> Result<(), String> {
+    existing_stream_id: Option<ObjectId>,
+) -> Result<Option<ObjectId>, String> {
     let mut ops: Vec<u8> = Vec::new();
     let mut fonts_needed: HashMap<&'static str, &'static str> = HashMap::new();
     let mut xobjects: Vec<(String, ObjectId)> = Vec::new();
@@ -476,7 +489,13 @@ pub fn write_annotations_for_page(
     }
 
     if ops.is_empty() {
-        return Ok(());
+        // If we had a previous stream, empty it so stale operators are gone
+        if let Some(sid) = existing_stream_id {
+            let obj = doc.get_object_mut(sid).map_err(|e| e.to_string())?;
+            if let Object::Stream(s) = obj { s.content = vec![]; }
+            return Ok(Some(sid));
+        }
+        return Ok(None);
     }
 
     // Register font resources
@@ -489,8 +508,16 @@ pub fn write_annotations_for_page(
         add_xobject_to_page(doc, page_id, &name, xobj_id)?;
     }
 
-    // Append all operators as a new content stream
-    append_content_stream(doc, page_id, ops)
+    // Update existing stream in-place, or append a new one
+    if let Some(sid) = existing_stream_id {
+        let obj = doc.get_object_mut(sid).map_err(|e| e.to_string())?;
+        if let Object::Stream(s) = obj {
+            s.content = ops;
+            return Ok(Some(sid));
+        }
+    }
+    let new_id = append_content_stream(doc, page_id, ops)?;
+    Ok(Some(new_id))
 }
 
 // ── Tests (TDD — must fail before implementation) ────────────────────────────

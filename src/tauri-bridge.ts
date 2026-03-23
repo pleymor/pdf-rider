@@ -46,20 +46,3 @@ export async function readAnnotations(
 ): Promise<Annotation[]> {
   return invoke<Annotation[]>("read_annotations", { filePath });
 }
-
-/**
- * Burns `annotations` permanently into the PDF at `inputPath` and writes the
- * flat result to `outputPath`. The result is visible in all PDF viewers but
- * annotations can no longer be edited by this app.
- */
-export async function exportAnnotatedPdf(
-  inputPath: string,
-  outputPath: string,
-  annotations: Annotation[]
-): Promise<void> {
-  return invoke<void>("export_annotated_pdf", {
-    inputPath,
-    outputPath,
-    annotations,
-  });
-}

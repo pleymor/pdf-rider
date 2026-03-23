@@ -67,6 +67,9 @@ export class CanvasOverlay {
   private removedHandlers: AnnotationRemovedHandler[] = [];
 
   private committed: Annotation[] = [];
+  /** Annotations already burned into the PDF content stream — rendered by
+   *  pdf.js, so the overlay skips them until they are modified. */
+  private burnedAnns: Set<Annotation> = new Set();
 
   constructor(initialStyle: ActiveToolState) {
     this.style = { ...initialStyle };
@@ -85,6 +88,14 @@ export class CanvasOverlay {
   onAnnotationCreated(h: AnnotationCreatedHandler): void { this.createdHandlers.push(h); }
   onAnnotationMoved  (h: AnnotationMovedHandler):   void { this.movedHandlers.push(h); }
   onAnnotationRemoved(h: AnnotationRemovedHandler): void { this.removedHandlers.push(h); }
+
+  /** Mark these annotations as already burned into the PDF content stream.
+   *  The overlay will skip rendering them to avoid visual doubling — they are
+   *  shown by pdf.js instead. Automatically cleared when they are modified. */
+  markBurned(anns: Annotation[]): void {
+    this.burnedAnns = new Set(anns);
+    this.redrawCommitted();
+  }
 
   private emit       (a: Annotation): void { this.createdHandlers.forEach(h => h(a)); }
   private emitMoved  (a: Annotation): void { this.movedHandlers.forEach(h => h(a)); }
@@ -199,6 +210,7 @@ export class CanvasOverlay {
 
   /** Compute fixed-edge anchors in PDF pts for the given handle. */
   private startResize(ann: Annotation, handle: ResizeHandle): void {
+    this.burnedAnns.delete(ann); // will be re-rendered by overlay during resize
     this.resizing      = true;
     this.resizeHandle  = handle;
     this.dragTarget    = ann;
@@ -315,6 +327,10 @@ export class CanvasOverlay {
   }
 
   private drawAnnotation(ann: Annotation): void {
+    // Burned annotations are already rendered by pdf.js — skip to avoid doubling.
+    // They become visible here again once the user modifies them.
+    if (this.burnedAnns.has(ann)) return;
+
     const ctx = this.ctx;
     const { scale, pageHeightPt } = this;
 
@@ -409,6 +425,7 @@ export class CanvasOverlay {
       const hit = this.hitTest(e.offsetX, e.offsetY);
       this.selected = hit;
       if (hit) {
+        this.burnedAnns.delete(hit); // will be re-rendered by overlay during drag
         const bounds = this.getAnnBounds(hit);
         this.dragging    = true;
         this.dragTarget  = hit;
@@ -563,6 +580,7 @@ export class CanvasOverlay {
       const idx = this.committed.indexOf(this.selected);
       if (idx !== -1) this.committed.splice(idx, 1);
       const removed = this.selected;
+      this.burnedAnns.delete(removed);
       this.selected = null;
       this.redrawCommitted();
       this.emitRemoved(removed);
@@ -703,6 +721,7 @@ export class CanvasOverlay {
       restore();
       if (content && content !== ann.content) {
         ann.content = content;
+        this.burnedAnns.delete(ann);
         this.emitMoved(ann);
       }
       this.redrawCommitted();
@@ -795,6 +814,7 @@ export class CanvasOverlay {
       ann.bold      = boldBtn.style.background      === "rgb(26, 111, 181)";
       ann.italic    = italicBtn.style.background    === "rgb(26, 111, 181)";
       ann.underline = underlineBtn.style.background === "rgb(26, 111, 181)";
+      this.burnedAnns.delete(ann);
       this.redrawCommitted();
       this.emitMoved(ann);
     };
@@ -858,6 +878,7 @@ export class CanvasOverlay {
       ann.color = hexToRgb(colorInput.value);
       const sw = parseFloat(strokeInput.value);
       if (!isNaN(sw) && sw > 0) ann.strokeWidth = sw;
+      this.burnedAnns.delete(ann);
       this.redrawCommitted();
       this.emitMoved(ann);
     };
