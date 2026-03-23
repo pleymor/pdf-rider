@@ -20,6 +20,16 @@ export class AnnotationStore {
     }
   }
 
+  removeRef(ann: Annotation): boolean {
+    const list = this.store.get(ann.page);
+    if (!list) return false;
+    const idx = list.indexOf(ann);
+    if (idx === -1) return false;
+    list.splice(idx, 1);
+    if (list.length === 0) this.store.delete(ann.page);
+    return true;
+  }
+
   getForPage(page: number): Annotation[] {
     return this.store.get(page) ?? [];
   }

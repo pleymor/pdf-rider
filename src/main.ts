@@ -13,6 +13,7 @@ import {
   saveAnnotatedPdf,
 } from "./tauri-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ask } from "@tauri-apps/plugin-dialog";
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -112,11 +113,12 @@ async function saveFile(forceDialog: boolean): Promise<void> {
   }
 }
 
-function confirmUnsaved(): boolean {
+async function confirmUnsaved(): Promise<boolean> {
   if (!isDirty) return true;
-  return window.confirm(
-    "You have unsaved changes. Discard them and continue?"
-  );
+  return ask("Discard unsaved changes and continue?", {
+    title: "Unsaved changes",
+    kind: "warning",
+  });
 }
 
 // ── Toolbar events ────────────────────────────────────────────────────────────
@@ -124,7 +126,7 @@ function confirmUnsaved(): boolean {
 toolbar.on(async (e) => {
   switch (e.type) {
     case "open":
-      if (confirmUnsaved()) await openFile();
+      if (await confirmUnsaved()) await openFile();
       break;
 
     case "save":
@@ -217,6 +219,17 @@ toolbar.on(async (e) => {
 overlay.onAnnotationCreated((ann: Annotation) => {
   store.add(ann);
   setDirty(true);
+  toolbar.clearActiveTool();
+});
+
+overlay.onAnnotationMoved(() => {
+  // Position mutated in place on the shared reference — just mark dirty
+  setDirty(true);
+});
+
+overlay.onAnnotationRemoved((ann: Annotation) => {
+  store.removeRef(ann);
+  setDirty(true);
 });
 
 // ── Signature events ──────────────────────────────────────────────────────────
@@ -263,14 +276,16 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
 
     await appWindow.onCloseRequested(async (event) => {
       if (isDirty) {
-        const ok = window.confirm(
-          "You have unsaved changes. Close without saving?"
-        );
-        if (!ok) event.preventDefault();
+        event.preventDefault();
+        const ok = await ask("Close without saving?", {
+          title: "Unsaved changes",
+          kind: "warning",
+        });
+        if (ok) await appWindow.destroy();
       }
     });
 
-    await appWindow.onDragDropEvent((event) => {
+    await appWindow.onDragDropEvent(async (event) => {
       if (event.payload.type === "over") {
         document.body.classList.add("drag-over");
       } else if (event.payload.type === "leave" || event.payload.type === "cancel") {
@@ -281,7 +296,7 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
           p.toLowerCase().endsWith(".pdf")
         );
         if (pdfPath) {
-          if (confirmUnsaved()) loadPdf(pdfPath);
+          if (await confirmUnsaved()) loadPdf(pdfPath);
         } else if (event.payload.paths.length > 0) {
           showToast("Only PDF files can be opened.", true);
         }

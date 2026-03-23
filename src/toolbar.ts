@@ -223,5 +223,6 @@ export class Toolbar {
     for (const btn of Object.values(this.toolBtns)) {
       btn?.classList.remove("active");
     }
+    this.emit({ type: "tool-change", tool: "select" });
   }
 }
