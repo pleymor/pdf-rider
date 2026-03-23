@@ -9,6 +9,7 @@ import {
   type CircleAnnotation,
   type RectAnnotation,
   type SignatureAnnotation,
+  type TextAlignmentValue,
   type TextAnnotation,
   type ToolKind,
 } from "./models";
@@ -72,11 +73,12 @@ export class CanvasOverlay {
     this.canvas = document.getElementById("annotation-canvas") as HTMLCanvasElement;
     this.ctx = this.canvas.getContext("2d")!;
 
-    this.canvas.addEventListener("mousedown",  this.onMouseDown);
-    this.canvas.addEventListener("mousemove",  this.onMouseMove);
-    this.canvas.addEventListener("mouseup",    this.onMouseUp);
-    this.canvas.addEventListener("mouseleave", this.onMouseLeave);
-    this.canvas.addEventListener("dblclick",   this.onDblClick);
+    this.canvas.addEventListener("mousedown",    this.onMouseDown);
+    this.canvas.addEventListener("mousemove",    this.onMouseMove);
+    this.canvas.addEventListener("mouseup",      this.onMouseUp);
+    this.canvas.addEventListener("mouseleave",   this.onMouseLeave);
+    this.canvas.addEventListener("dblclick",     this.onDblClick);
+    this.canvas.addEventListener("contextmenu",  this.onContextMenu);
     window.addEventListener("keydown", this.onKeyDown);
   }
 
@@ -651,6 +653,13 @@ export class CanvasOverlay {
     else if (hit.kind === "rect" || hit.kind === "circle") this.handleShapeEdit(hit, e.offsetX, e.offsetY);
   };
 
+  private onContextMenu = (e: MouseEvent): void => {
+    e.preventDefault();
+    if (this.activeTool !== "select") return;
+    const hit = this.hitTest(e.offsetX, e.offsetY);
+    if (hit?.kind === "text") this.handleTextStyleEdit(hit, e.offsetX, e.offsetY);
+  };
+
   private handleTextEdit(ann: TextAnnotation): void {
     const container = document.getElementById("viewer-container")!;
     const { scale, pageHeightPt } = this;
@@ -717,6 +726,108 @@ export class CanvasOverlay {
     window.getSelection()?.removeAllRanges();
     window.getSelection()?.addRange(range);
     setTimeout(() => document.addEventListener("mousedown", outsideClick, true), 0);
+  }
+
+  private handleTextStyleEdit(ann: TextAnnotation, cx: number, cy: number): void {
+    const container = document.getElementById("viewer-container")!;
+    const pop = document.createElement("div");
+    pop.style.cssText = `
+      position: absolute; left: ${cx + 10}px; top: ${cy + 10}px;
+      background: #2a2a2a; border: 1px solid #555; border-radius: 6px;
+      padding: 8px; display: flex; flex-direction: column; gap: 8px;
+      z-index: 20; box-shadow: 0 2px 10px rgba(0,0,0,.6); min-width: 180px;
+    `;
+
+    const row = (content: HTMLElement[]): HTMLElement => {
+      const d = document.createElement("div");
+      d.style.cssText = "display:flex;gap:6px;align-items:center;";
+      d.append(...content);
+      return d;
+    };
+    const label = (text: string): HTMLElement => {
+      const s = document.createElement("span");
+      s.textContent = text;
+      s.style.cssText = "color:#aaa;font-size:11px;min-width:28px;";
+      return s;
+    };
+    const toggleBtn = (text: string, title: string, active: boolean, css = ""): HTMLButtonElement => {
+      const b = document.createElement("button");
+      b.textContent = text; b.title = title;
+      b.style.cssText = `width:26px;height:26px;border:1px solid #555;border-radius:3px;background:${active ? "#1a6fb5" : "#3a3a3a"};color:#e8e8e8;cursor:pointer;font-size:12px;padding:0;${css}`;
+      return b;
+    };
+
+    // ── Color ──
+    const colorInput = document.createElement("input");
+    colorInput.type = "color"; colorInput.value = rgbToHex(ann.color);
+    colorInput.style.cssText = "width:32px;height:26px;border:none;padding:0;cursor:pointer;background:none;border-radius:3px;";
+    colorInput.title = "Couleur";
+
+    // ── Font size ──
+    const sizeInput = document.createElement("input");
+    sizeInput.type = "number"; sizeInput.value = String(ann.fontSize);
+    sizeInput.min = "6"; sizeInput.max = "72";
+    sizeInput.style.cssText = "width:44px;background:#1e1e1e;color:#e8e8e8;border:1px solid #555;border-radius:3px;padding:2px 4px;font-size:12px;";
+
+    pop.appendChild(row([label("Couleur"), colorInput, label("Taille"), sizeInput]));
+
+    // ── Bold / Italic / Underline ──
+    const boldBtn      = toggleBtn("B", "Gras",      ann.bold,      "font-weight:700;");
+    const italicBtn    = toggleBtn("I", "Italique",  ann.italic,    "font-style:italic;");
+    const underlineBtn = toggleBtn("U", "Souligné",  ann.underline, "text-decoration:underline;");
+    pop.appendChild(row([label("Style"), boldBtn, italicBtn, underlineBtn]));
+
+    // ── Alignment ──
+    const alignments: [TextAlignmentValue, string, string][] = [
+      ["left", "⇐", "Gauche"], ["center", "⇔", "Centre"], ["right", "⇒", "Droite"],
+    ];
+    const alignBtns = alignments.map(([val, icon, title]) => {
+      const b = toggleBtn(icon, title, ann.alignment === val);
+      b.dataset["align"] = val;
+      return b;
+    });
+    pop.appendChild(row([label("Align"), ...alignBtns]));
+
+    const apply = (): void => {
+      ann.color     = hexToRgb(colorInput.value);
+      const fs = parseInt(sizeInput.value, 10);
+      if (!isNaN(fs) && fs > 0) ann.fontSize = fs;
+      ann.bold      = boldBtn.style.background      === "rgb(26, 111, 181)";
+      ann.italic    = italicBtn.style.background    === "rgb(26, 111, 181)";
+      ann.underline = underlineBtn.style.background === "rgb(26, 111, 181)";
+      this.redrawCommitted();
+      this.emitMoved(ann);
+    };
+
+    // Toggle button helpers
+    const activeColor   = "rgb(26, 111, 181)";
+    const inactiveColor = "rgb(58, 58, 58)";
+    [boldBtn, italicBtn, underlineBtn].forEach(b => {
+      b.addEventListener("click", () => {
+        b.style.background = b.style.background === activeColor ? inactiveColor : activeColor;
+        apply();
+      });
+    });
+    alignBtns.forEach((b, i) => {
+      b.addEventListener("click", () => {
+        ann.alignment = alignments[i][0];
+        alignBtns.forEach(ab => ab.style.background = inactiveColor);
+        b.style.background = activeColor;
+        apply();
+      });
+    });
+    colorInput.addEventListener("input", apply);
+    sizeInput.addEventListener("change", apply);
+
+    const dismiss = (ev: MouseEvent): void => {
+      if (!pop.contains(ev.target as Node)) {
+        pop.remove();
+        document.removeEventListener("mousedown", dismiss);
+      }
+    };
+    setTimeout(() => document.addEventListener("mousedown", dismiss), 0);
+    container.appendChild(pop);
+    colorInput.focus();
   }
 
   private handleShapeEdit(ann: RectAnnotation | CircleAnnotation, cx: number, cy: number): void {

@@ -97,11 +97,15 @@ async function openFile(): Promise<void> {
 async function saveFile(forceDialog: boolean): Promise<void> {
   if (!filePath) return;
 
-  let target = outputPath;
-  if (!target || forceDialog) {
-    target = await savePdfDialog(filePath);
-    if (!target) return;
-    outputPath = target;
+  let target: string;
+  if (forceDialog) {
+    const picked = await savePdfDialog(filePath);
+    if (!picked) return;
+    outputPath = picked;
+    target = picked;
+  } else {
+    // Save: write directly to the last save path, or overwrite the source file
+    target = outputPath ?? filePath;
   }
 
   try {

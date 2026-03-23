@@ -103,47 +103,84 @@ fn pdf_escape(s: &str) -> String {
     out
 }
 
+/// Split `text` on explicit `\n` then word-wrap each paragraph to `max_width`,
+/// using `char_w` as the average character width estimate.
+fn wrap_text(text: &str, max_width: f64, char_w: f64) -> Vec<String> {
+    let mut result = Vec::new();
+    for para in text.split('\n') {
+        if para.is_empty() {
+            result.push(String::new());
+            continue;
+        }
+        let mut line = String::new();
+        let mut line_w = 0.0_f64;
+        for word in para.split(' ') {
+            let word_w = word.len() as f64 * char_w;
+            // Width if we append this word (with a leading space if line is non-empty)
+            let candidate_w = if line.is_empty() { word_w } else { line_w + char_w + word_w };
+            if !line.is_empty() && candidate_w > max_width {
+                result.push(line.clone());
+                line = word.to_string();
+                line_w = word_w;
+            } else {
+                if !line.is_empty() { line.push(' '); line_w += char_w; }
+                line.push_str(word);
+                line_w += word_w;
+            }
+        }
+        result.push(line);
+    }
+    result
+}
+
 /// Append text operators to `buf`.
 /// Returns the resource key and base font name so the caller can register it.
 pub fn write_text(buf: &mut Vec<u8>, ann: &TextAnnotation) -> (&'static str, &'static str) {
-    // Rough text-width estimate for alignment: Helvetica average ~0.5 × size per char.
-    let estimated_width = ann.content.len() as f64 * ann.font_size * 0.5;
-    let x_offset = match ann.alignment {
-        TextAlignment::Left => 0.0,
-        TextAlignment::Center => (ann.width - estimated_width) / 2.0,
-        TextAlignment::Right => ann.width - estimated_width,
-    };
-    let x = ann.x + x_offset.max(0.0);
-    let fkey = font_key(ann.bold, ann.italic);
+    let fkey  = font_key(ann.bold, ann.italic);
     let fname = font_name(ann.bold, ann.italic);
+    // Helvetica average glyph width ≈ 0.5 × font size
+    let char_w  = ann.font_size * 0.5;
+    let line_h  = ann.font_size * 1.2;
+    let lines   = wrap_text(&ann.content, ann.width, char_w);
 
     let mut ops = format!(
-        concat!(
-            "q\n",
-            "{:.4} {:.4} {:.4} rg\n",
-            "BT\n",
-            "/{} {:.4} Tf\n",
-            "{:.4} {:.4} Td\n",
-            "({}) Tj\n",
-            "ET\n",
-        ),
+        "q\n{:.4} {:.4} {:.4} rg\nBT\n/{} {:.4} Tf\n",
         ann.color.r_f(), ann.color.g_f(), ann.color.b_f(),
         fkey, ann.font_size,
-        x, ann.y,
-        pdf_escape(&ann.content),
     );
 
-    // Underline: a thin horizontal rule below the baseline.
-    if ann.underline {
-        let ul_y = ann.y - ann.font_size * 0.12;
-        let ul_len = estimated_width.min(ann.width);
+    // Collect underline segments to draw after ET (outside text object)
+    let mut underlines: Vec<(f64, f64, f64)> = Vec::new();
+
+    for (i, line) in lines.iter().enumerate() {
+        let line_w = line.len() as f64 * char_w;
+        let x_off = match ann.alignment {
+            TextAlignment::Left   => 0.0,
+            TextAlignment::Center => ((ann.width - line_w) / 2.0).max(0.0),
+            TextAlignment::Right  => (ann.width - line_w).max(0.0),
+        };
+        let x = ann.x + x_off;
+        let y = ann.y - i as f64 * line_h;
+
+        // 1 0 0 1 x y Tm = absolute text position
+        ops.push_str(&format!("1 0 0 1 {:.4} {:.4} Tm\n({}) Tj\n", x, y, pdf_escape(line)));
+
+        if ann.underline {
+            underlines.push((x, y - ann.font_size * 0.12, line_w.min(ann.width)));
+        }
+    }
+
+    ops.push_str("ET\n");
+
+    if !underlines.is_empty() {
         ops.push_str(&format!(
-            "{:.4} {:.4} {:.4} RG\n{:.4} w\n{:.4} {:.4} m\n{:.4} {:.4} l\nS\n",
+            "{:.4} {:.4} {:.4} RG\n{:.4} w\n",
             ann.color.r_f(), ann.color.g_f(), ann.color.b_f(),
             ann.font_size * 0.05,
-            x, ul_y,
-            x + ul_len, ul_y,
         ));
+        for (x, ul_y, ul_len) in underlines {
+            ops.push_str(&format!("{:.4} {:.4} m\n{:.4} {:.4} l\nS\n", x, ul_y, x + ul_len, ul_y));
+        }
     }
 
     ops.push_str("Q\n");
