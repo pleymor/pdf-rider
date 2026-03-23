@@ -6,6 +6,7 @@ import { AnnotationStore } from "./annotation-store";
 import {
   defaultToolState,
   type Annotation,
+  type TextAnnotation,
 } from "./models";
 import {
   openPdfDialog,
@@ -22,6 +23,7 @@ let filePath: string | null = null;
 let outputPath: string | null = null;
 let isDirty = false;
 let pendingSignature: string | null = null; // base64 PNG while in placing mode
+let editingTextAnn:  TextAnnotation | null = null; // text annotation whose style is bound to toolbar
 
 // ── Instances ─────────────────────────────────────────────────────────────────
 
@@ -227,6 +229,32 @@ toolbar.on(async (e) => {
 
     case "tool-change":
       overlay.setTool(e.tool);
+      if (e.tool === "text") {
+        editingTextAnn = null;
+        toolbar.showTextStyles(toolState);
+      } else {
+        editingTextAnn = null;
+        toolbar.hideTextStyles();
+      }
+      break;
+
+    case "style-change":
+      if (editingTextAnn) {
+        overlay.applyTextAnnotationStyle(editingTextAnn, e.style);
+        setDirty(true);
+      } else {
+        Object.assign(toolState, e.style);
+        overlay.setStyle(toolState);
+      }
+      break;
+
+    case "text-layer":
+      if (editingTextAnn) {
+        if (e.dir === "front") store.bringToFront(editingTextAnn);
+        else store.sendToBack(editingTextAnn);
+        overlay.reorderTextAnnotation(editingTextAnn, e.dir);
+        setDirty(true);
+      }
       break;
 
     case "signature":
@@ -257,6 +285,15 @@ overlay.onAnnotationReordered((ann: Annotation, dir) => {
   if (dir === "front") store.bringToFront(ann);
   else store.sendToBack(ann);
   setDirty(true);
+});
+
+overlay.onTextAnnotationSelected((ann: TextAnnotation | null) => {
+  editingTextAnn = ann;
+  if (ann) {
+    toolbar.showTextStyles(ann);
+  } else if (overlay.currentTool !== "text") {
+    toolbar.hideTextStyles();
+  }
 });
 
 // ── Signature events ──────────────────────────────────────────────────────────
@@ -296,6 +333,8 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
   } else if (overlay.currentTool !== "select") {
     overlay.setTool("select");
     toolbar.clearActiveTool();
+    editingTextAnn = null;
+    toolbar.hideTextStyles();
   }
 });
 

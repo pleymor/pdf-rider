@@ -14,10 +14,11 @@ import {
   type ToolKind,
 } from "./models";
 
-type AnnotationCreatedHandler  = (ann: Annotation) => void;
-type AnnotationMovedHandler    = (ann: Annotation) => void;
-type AnnotationRemovedHandler  = (ann: Annotation) => void;
-type AnnotationReorderHandler  = (ann: Annotation, dir: "front" | "back") => void;
+type AnnotationCreatedHandler      = (ann: Annotation) => void;
+type AnnotationMovedHandler        = (ann: Annotation) => void;
+type AnnotationRemovedHandler      = (ann: Annotation) => void;
+type AnnotationReorderHandler      = (ann: Annotation, dir: "front" | "back") => void;
+type TextAnnotationSelectedHandler = (ann: TextAnnotation | null) => void;
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 const HANDLE_R = 4; // half-size of handle squares in px
@@ -63,10 +64,11 @@ export class CanvasOverlay {
   private scale = 1.5;
 
   // ── Callbacks ───────────────────────────────────────────────────────────────
-  private createdHandlers:  AnnotationCreatedHandler[]  = [];
-  private movedHandlers:    AnnotationMovedHandler[]    = [];
-  private removedHandlers:  AnnotationRemovedHandler[]  = [];
-  private reorderHandlers:  AnnotationReorderHandler[]  = [];
+  private createdHandlers:      AnnotationCreatedHandler[]      = [];
+  private movedHandlers:        AnnotationMovedHandler[]        = [];
+  private removedHandlers:      AnnotationRemovedHandler[]      = [];
+  private reorderHandlers:      AnnotationReorderHandler[]      = [];
+  private textSelectedHandlers: TextAnnotationSelectedHandler[] = [];
 
   private committed: Annotation[] = [];
   /** Annotations already burned into the PDF content stream — rendered by
@@ -91,10 +93,11 @@ export class CanvasOverlay {
     window.addEventListener("keydown", this.onKeyDown);
   }
 
-  onAnnotationCreated (h: AnnotationCreatedHandler):  void { this.createdHandlers.push(h); }
-  onAnnotationMoved   (h: AnnotationMovedHandler):    void { this.movedHandlers.push(h); }
-  onAnnotationRemoved (h: AnnotationRemovedHandler):  void { this.removedHandlers.push(h); }
-  onAnnotationReordered(h: AnnotationReorderHandler): void { this.reorderHandlers.push(h); }
+  onAnnotationCreated    (h: AnnotationCreatedHandler):      void { this.createdHandlers.push(h); }
+  onAnnotationMoved      (h: AnnotationMovedHandler):        void { this.movedHandlers.push(h); }
+  onAnnotationRemoved    (h: AnnotationRemovedHandler):      void { this.removedHandlers.push(h); }
+  onAnnotationReordered  (h: AnnotationReorderHandler):      void { this.reorderHandlers.push(h); }
+  onTextAnnotationSelected(h: TextAnnotationSelectedHandler):void { this.textSelectedHandlers.push(h); }
 
   /** Mark these annotations as already burned into the PDF content stream.
    *  The overlay will skip rendering them to avoid visual doubling — they are
@@ -114,14 +117,33 @@ export class CanvasOverlay {
     this.burnedAnns.delete(ann);
   }
 
-  private emit          (a: Annotation): void { this.createdHandlers.forEach(h => h(a)); }
-  private emitMoved     (a: Annotation): void { this.movedHandlers.forEach(h => h(a)); }
-  private emitRemoved   (a: Annotation): void { this.removedHandlers.forEach(h => h(a)); }
-  private emitReordered (a: Annotation, dir: "front" | "back"): void {
+  private emit             (a: Annotation): void { this.createdHandlers.forEach(h => h(a)); }
+  private emitMoved        (a: Annotation): void { this.movedHandlers.forEach(h => h(a)); }
+  private emitRemoved      (a: Annotation): void { this.removedHandlers.forEach(h => h(a)); }
+  private emitReordered    (a: Annotation, dir: "front" | "back"): void {
     this.reorderHandlers.forEach(h => h(a, dir));
+  }
+  private emitTextSelected (a: TextAnnotation | null): void {
+    this.textSelectedHandlers.forEach(h => h(a));
   }
 
   get currentTool(): ToolKind { return this.activeTool; }
+
+  /** Apply text style fields to an existing annotation and redraw. */
+  applyTextAnnotationStyle(
+    ann: TextAnnotation,
+    style: Pick<ActiveToolState, "color" | "fontSize" | "bold" | "italic" | "underline" | "alignment">
+  ): void {
+    this.unmarkBurned(ann);
+    ann.color     = { ...style.color };
+    ann.fontSize  = style.fontSize;
+    ann.bold      = style.bold;
+    ann.italic    = style.italic;
+    ann.underline = style.underline;
+    ann.alignment = style.alignment;
+    this.redrawCommitted();
+    this.emitMoved(ann);
+  }
 
   setStyle(style: ActiveToolState): void {
     this.style = { ...style };
@@ -473,6 +495,7 @@ export class CanvasOverlay {
         this.canvas.style.cursor = "grabbing";
       }
       this.redrawCommitted();
+      this.emitTextSelected(hit?.kind === "text" ? hit : null);
       return;
     }
 
@@ -704,15 +727,20 @@ export class CanvasOverlay {
     e.preventDefault();
     if (hit.kind === "text") this.handleTextEdit(hit);
     else if (hit.kind === "rect" || hit.kind === "circle") this.handleShapeEdit(hit, e.offsetX, e.offsetY);
+
   };
 
   private onContextMenu = (e: MouseEvent): void => {
     e.preventDefault();
     if (this.activeTool !== "select") return;
     const hit = this.hitTest(e.offsetX, e.offsetY);
-    if (hit?.kind === "text") this.handleTextStyleEdit(hit, e.offsetX, e.offsetY);
+    if (hit?.kind === "text") this.handleTextStyleEdit(hit);
     else if (hit?.kind === "rect" || hit?.kind === "circle") this.handleShapeEdit(hit, e.offsetX, e.offsetY);
   };
+
+  reorderTextAnnotation(ann: Annotation, dir: "front" | "back"): void {
+    this.reorderAnnotation(ann, dir);
+  }
 
   private reorderAnnotation(ann: Annotation, dir: "front" | "back"): void {
     const idx = this.committed.indexOf(ann);
@@ -793,114 +821,10 @@ export class CanvasOverlay {
     setTimeout(() => document.addEventListener("mousedown", outsideClick, true), 0);
   }
 
-  private handleTextStyleEdit(ann: TextAnnotation, cx: number, cy: number): void {
-    const container = document.getElementById("viewer-container")!;
-    const pop = document.createElement("div");
-    pop.style.cssText = `
-      position: absolute; left: ${cx + 10}px; top: ${cy + 10}px;
-      background: #2a2a2a; border: 1px solid #555; border-radius: 6px;
-      padding: 8px; display: flex; flex-direction: column; gap: 8px;
-      z-index: 20; box-shadow: 0 2px 10px rgba(0,0,0,.6); min-width: 180px;
-    `;
-
-    const row = (content: HTMLElement[]): HTMLElement => {
-      const d = document.createElement("div");
-      d.style.cssText = "display:flex;gap:6px;align-items:center;";
-      d.append(...content);
-      return d;
-    };
-    const label = (text: string): HTMLElement => {
-      const s = document.createElement("span");
-      s.textContent = text;
-      s.style.cssText = "color:#aaa;font-size:11px;min-width:28px;";
-      return s;
-    };
-    const toggleBtn = (text: string, title: string, active: boolean, css = ""): HTMLButtonElement => {
-      const b = document.createElement("button");
-      b.textContent = text; b.title = title;
-      b.style.cssText = `width:26px;height:26px;border:1px solid #555;border-radius:3px;background:${active ? "#1a6fb5" : "#3a3a3a"};color:#e8e8e8;cursor:pointer;font-size:12px;padding:0;${css}`;
-      return b;
-    };
-
-    // ── Color ──
-    const colorInput = document.createElement("input");
-    colorInput.type = "color"; colorInput.value = rgbToHex(ann.color);
-    colorInput.style.cssText = "width:32px;height:26px;border:none;padding:0;cursor:pointer;background:none;border-radius:3px;";
-    colorInput.title = "Couleur";
-
-    // ── Font size ──
-    const sizeInput = document.createElement("input");
-    sizeInput.type = "number"; sizeInput.value = String(ann.fontSize);
-    sizeInput.min = "6"; sizeInput.max = "72";
-    sizeInput.style.cssText = "width:44px;background:#1e1e1e;color:#e8e8e8;border:1px solid #555;border-radius:3px;padding:2px 4px;font-size:12px;";
-
-    pop.appendChild(row([label("Couleur"), colorInput, label("Taille"), sizeInput]));
-
-    // ── Bold / Italic / Underline ──
-    const boldBtn      = toggleBtn("B", "Gras",      ann.bold,      "font-weight:700;");
-    const italicBtn    = toggleBtn("I", "Italique",  ann.italic,    "font-style:italic;");
-    const underlineBtn = toggleBtn("U", "Souligné",  ann.underline, "text-decoration:underline;");
-    pop.appendChild(row([label("Style"), boldBtn, italicBtn, underlineBtn]));
-
-    // ── Alignment ──
-    const alignments: [TextAlignmentValue, string, string][] = [
-      ["left", "⇐", "Gauche"], ["center", "⇔", "Centre"], ["right", "⇒", "Droite"],
-    ];
-    const alignBtns = alignments.map(([val, icon, title]) => {
-      const b = toggleBtn(icon, title, ann.alignment === val);
-      b.dataset["align"] = val;
-      return b;
-    });
-    pop.appendChild(row([label("Align"), ...alignBtns]));
-
-    const apply = (): void => {
-      this.unmarkBurned(ann); // snapshot old bounds before modifying
-      ann.color     = hexToRgb(colorInput.value);
-      const fs = parseInt(sizeInput.value, 10);
-      if (!isNaN(fs) && fs > 0) ann.fontSize = fs;
-      ann.bold      = boldBtn.style.background      === "rgb(26, 111, 181)";
-      ann.italic    = italicBtn.style.background    === "rgb(26, 111, 181)";
-      ann.underline = underlineBtn.style.background === "rgb(26, 111, 181)";
-      this.redrawCommitted();
-      this.emitMoved(ann);
-    };
-
-    // Toggle button helpers
-    const activeColor   = "rgb(26, 111, 181)";
-    const inactiveColor = "rgb(58, 58, 58)";
-    [boldBtn, italicBtn, underlineBtn].forEach(b => {
-      b.addEventListener("click", () => {
-        b.style.background = b.style.background === activeColor ? inactiveColor : activeColor;
-        apply();
-      });
-    });
-    alignBtns.forEach((b, i) => {
-      b.addEventListener("click", () => {
-        ann.alignment = alignments[i][0];
-        alignBtns.forEach(ab => ab.style.background = inactiveColor);
-        b.style.background = activeColor;
-        apply();
-      });
-    });
-    colorInput.addEventListener("input", apply);
-    sizeInput.addEventListener("change", apply);
-
-    // ── Layer order ──
-    const frontBtn = toggleBtn("↑", "Mettre au premier plan", false);
-    const backBtn  = toggleBtn("↓", "Envoyer en arrière-plan", false);
-    frontBtn.addEventListener("click", () => { this.reorderAnnotation(ann, "front"); pop.remove(); });
-    backBtn.addEventListener ("click", () => { this.reorderAnnotation(ann, "back");  pop.remove(); });
-    pop.appendChild(row([label("Ordre"), frontBtn, backBtn]));
-
-    const dismiss = (ev: MouseEvent): void => {
-      if (!pop.contains(ev.target as Node)) {
-        pop.remove();
-        document.removeEventListener("mousedown", dismiss);
-      }
-    };
-    setTimeout(() => document.addEventListener("mousedown", dismiss), 0);
-    container.appendChild(pop);
-    colorInput.focus();
+  private handleTextStyleEdit(ann: TextAnnotation): void {
+    this.selected = ann;
+    this.redrawCommitted();
+    this.emitTextSelected(ann);
   }
 
   private handleShapeEdit(ann: RectAnnotation | CircleAnnotation, cx: number, cy: number): void {
