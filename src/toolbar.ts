@@ -6,6 +6,19 @@ import {
   type TextAlignmentValue,
   type ToolKind,
 } from "./models";
+import {
+  ICON_OPEN_FILE,
+  ICON_PAGE_UP,
+  ICON_PAGE_DOWN,
+  ICON_ZOOM_OUT,
+  ICON_ZOOM_IN,
+  ICON_EDITOR_FREE_TEXT,
+  ICON_EDITOR_INK,
+  ICON_EDITOR_SIGNATURE,
+  ICON_PRINT,
+  ICON_RECT,
+  ICON_CIRCLE,
+} from "./icons";
 
 type ToolbarEvent =
   | { type: "open" }
@@ -122,14 +135,14 @@ export class Toolbar {
   private btn(label: string, title: string, cls = "btn"): HTMLButtonElement {
     const b = document.createElement("button");
     b.className = cls;
-    b.textContent = label;
+    b.innerHTML = label;
     b.title = title;
     return b;
   }
 
   private build(): void {
     // Open (always visible)
-    const openBtn = this.btn("Open", "Open PDF");
+    const openBtn = this.btn(`${ICON_OPEN_FILE}<span>Open</span>`, "Open PDF");
     openBtn.addEventListener("click", () => this.emit({ type: "open" }));
     this.el.append(openBtn);
 
@@ -142,7 +155,7 @@ export class Toolbar {
     d.append(this.sep());
 
     // Page navigation
-    const prevBtn = this.btn("◀", "Previous page", "icon-btn");
+    const prevBtn = this.btn(ICON_PAGE_UP, "Previous page", "icon-btn");
     prevBtn.addEventListener("click", () => this.emit({ type: "page-prev" }));
 
     this.pageInput = document.createElement("input");
@@ -158,7 +171,7 @@ export class Toolbar {
     this.pageTotal = document.createElement("span");
     this.pageTotal.textContent = "/ –";
 
-    const nextBtn = this.btn("▶", "Next page", "icon-btn");
+    const nextBtn = this.btn(ICON_PAGE_DOWN, "Next page", "icon-btn");
     nextBtn.addEventListener("click", () => this.emit({ type: "page-next" }));
 
     const navWrapper = document.createElement("div");
@@ -171,18 +184,18 @@ export class Toolbar {
     d.append(this.pageNavSection);
 
     // Zoom
-    const zoomOut = this.btn("−", "Zoom out", "icon-btn");
+    const zoomOut = this.btn(ICON_ZOOM_OUT, "Zoom out", "icon-btn");
     zoomOut.addEventListener("click", () => this.emit({ type: "zoom-out" }));
-    const zoomIn = this.btn("+", "Zoom in", "icon-btn");
+    const zoomIn = this.btn(ICON_ZOOM_IN, "Zoom in", "icon-btn");
     zoomIn.addEventListener("click", () => this.emit({ type: "zoom-in" }));
     d.append(zoomOut, zoomIn, this.sep());
 
     // Drawing tools
     const tools: [ToolKind, string, string][] = [
-      ["rect", "▭", "Rectangle"],
-      ["circle", "◯", "Circle"],
-      ["text", "T", "Text"],
-      ["signature", "✍", "Signature"],
+      ["rect",      ICON_RECT,               "Rectangle"],
+      ["circle",    ICON_CIRCLE,             "Circle"],
+      ["text",      ICON_EDITOR_FREE_TEXT,   "Text"],
+      ["signature", ICON_EDITOR_SIGNATURE,   "Signature"],
     ];
 
     for (const [kind, icon, title] of tools) {
@@ -209,9 +222,7 @@ export class Toolbar {
     saveBtn.addEventListener("click", () => this.emit({ type: "save" }));
     const saveAsBtn = this.btn("Save As…", "Save PDF as…");
     saveAsBtn.addEventListener("click", () => this.emit({ type: "save-as" }));
-    const printBtn = this.btn("Print", "Print PDF", "icon-btn");
-    printBtn.textContent = "🖨";
-    printBtn.title = "Print";
+    const printBtn = this.btn(ICON_PRINT, "Print", "icon-btn");
     printBtn.addEventListener("click", () => window.print());
     d.append(saveBtn, saveAsBtn, this.sep(), printBtn);
   }
