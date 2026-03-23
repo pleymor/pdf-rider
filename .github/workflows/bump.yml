@@ -17,8 +17,8 @@ permissions:
   contents: write
 
 jobs:
-  bump-tag:
-    runs-on: ubuntu-latest
+  release:
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
@@ -26,34 +26,89 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Compute next tag
-        id: tag
+      - name: Compute next version
+        id: version
         shell: bash
         run: |
-          # Get latest vX.Y.Z tag, default to v0.0.0 if none
           LATEST=$(git tag --list 'v*.*.*' --sort=-version:refname | head -1)
           LATEST=${LATEST:-v0.0.0}
-          echo "Latest tag: $LATEST"
-
-          # Strip leading 'v'
           VERSION="${LATEST#v}"
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
           MINOR=$(echo "$VERSION" | cut -d. -f2)
           PATCH=$(echo "$VERSION" | cut -d. -f3)
-
           case "${{ inputs.bump }}" in
             major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
             minor) MINOR=$((MINOR+1)); PATCH=0 ;;
             patch) PATCH=$((PATCH+1)) ;;
           esac
+          NEXT="${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$NEXT" >> $GITHUB_OUTPUT
+          echo "tag=v${NEXT}" >> $GITHUB_OUTPUT
+          echo "Next: v${NEXT}"
 
-          NEXT="v${MAJOR}.${MINOR}.${PATCH}"
-          echo "Next tag: $NEXT"
-          echo "next=$NEXT" >> $GITHUB_OUTPUT
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Update version in tauri.conf.json
+        shell: pwsh
+        run: |
+          (Get-Content src-tauri/tauri.conf.json) `
+            -replace '"version": "[^"]*"', '"version": "${{ steps.version.outputs.version }}"' |
+            Set-Content src-tauri/tauri.conf.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        run: npm run tauri build
+
+      - name: Stage artifacts
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cp "src-tauri/target/release/pdf-reader-portable.exe" \
+             "pdf-reader-portable-${VERSION}-win-x64.exe"
+          cp "src-tauri/target/release/bundle/nsis/PDF Reader_${VERSION}_x64-setup.exe" \
+             "pdf-reader-${VERSION}-win-x64-setup.exe"
+
+      - name: Check pre-release
+        id: prerelease
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [[ "$VERSION" == *"-alpha"* ]] || [[ "$VERSION" == *"-beta"* ]] || [[ "$VERSION" == *"-rc"* ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Push tag
+        shell: bash
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ steps.tag.outputs.next }}
-          git push origin ${{ steps.tag.outputs.next }}
+          git tag ${{ steps.version.outputs.tag }}
+          git push origin ${{ steps.version.outputs.tag }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
+          files: |
+            pdf-reader-portable-${{ steps.version.outputs.version }}-win-x64.exe
+            pdf-reader-${{ steps.version.outputs.version }}-win-x64-setup.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
