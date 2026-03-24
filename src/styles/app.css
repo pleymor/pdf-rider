@@ -217,8 +217,8 @@ input[type="color"].color-picker {
 #form-layer input,
 #form-layer textarea,
 #form-layer select {
-  background: rgba(173, 214, 255, 0.45);
-  border: 1px solid rgba(100, 170, 255, 0.7);
+  background: rgba(173, 214, 255, 0.18);
+  border: none;
   border-radius: 1px;
   pointer-events: auto;
   box-sizing: border-box;
@@ -231,8 +231,8 @@ input[type="color"].color-picker {
 #form-layer input:focus,
 #form-layer textarea:focus,
 #form-layer select:focus {
-  background: rgba(173, 214, 255, 0.15);
-  box-shadow: 0 0 0 2px rgba(100, 170, 255, 0.6);
+  background: transparent;
+  box-shadow: none;
 }
 
 #form-layer input[type="checkbox"],
