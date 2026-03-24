@@ -6,6 +6,7 @@ import {
   type TextAlignmentValue,
   type ToolKind,
 } from "./models";
+import type { Translations } from "./i18n";
 import {
   ICON_OPEN_FILE,
   ICON_PAGE_UP,
@@ -24,6 +25,7 @@ import {
   ICON_ALIGN_RIGHT,
   ICON_FIT_WIDTH,
   ICON_FIT_HEIGHT,
+  ICON_SETTINGS,
 } from "./icons";
 
 type ToolbarEvent =
@@ -42,7 +44,8 @@ type ToolbarEvent =
   | { type: "tool-change"; tool: ToolKind }
   | { type: "style-change"; style: ActiveToolState }
   | { type: "layer-change"; dir: "front" | "back" }
-  | { type: "signature" };
+  | { type: "signature" }
+  | { type: "settings" };
 
 type EventHandler = (e: ToolbarEvent) => void;
 
@@ -61,6 +64,9 @@ export class Toolbar {
   private zoomInput!: HTMLInputElement;
   private _lastScale = 1.5;
   private toolBtns: Partial<Record<ToolKind, HTMLButtonElement>> = {};
+
+  private _i18nText  = new Map<HTMLElement, keyof Translations>();
+  private _i18nTitle = new Map<HTMLElement, keyof Translations>();
 
   // Text style section
   private textStyleSection!: HTMLElement;
@@ -83,6 +89,16 @@ export class Toolbar {
 
   on(handler: EventHandler): void {
     this.handlers.push(handler);
+  }
+
+  applyTranslations(t: Translations): void {
+    this._i18nText.forEach((key, el)  => { el.textContent = t[key]; });
+    this._i18nTitle.forEach((key, el) => { el.title = t[key]; });
+  }
+
+  private reg(el: HTMLElement, text?: keyof Translations, title?: keyof Translations): void {
+    if (text)  this._i18nText.set(el, text);
+    if (title) this._i18nTitle.set(el, title);
   }
 
   private emit(e: ToolbarEvent): void {
@@ -165,6 +181,8 @@ export class Toolbar {
   private build(): void {
     // Open (always visible)
     const openBtn = this.btn(`${ICON_OPEN_FILE}<span>Open</span>`, "Open PDF");
+    this.reg(openBtn.querySelector("span") as HTMLSpanElement, "btnOpen");
+    this.reg(openBtn, undefined, "ttOpen");
     openBtn.addEventListener("click", () => this.emit({ type: "open" }));
     this.el.append(openBtn);
 
@@ -178,6 +196,7 @@ export class Toolbar {
 
     // Page navigation
     const prevBtn = this.btn(ICON_PAGE_UP, "Previous page", "icon-btn");
+    this.reg(prevBtn, undefined, "ttPagePrev");
     prevBtn.addEventListener("click", () => this.emit({ type: "page-prev" }));
 
     this.pageInput = document.createElement("input");
@@ -194,6 +213,7 @@ export class Toolbar {
     this.pageTotal.textContent = "/ –";
 
     const nextBtn = this.btn(ICON_PAGE_DOWN, "Next page", "icon-btn");
+    this.reg(nextBtn, undefined, "ttPageNext");
     nextBtn.addEventListener("click", () => this.emit({ type: "page-next" }));
 
     const navWrapper = document.createElement("div");
@@ -206,14 +226,16 @@ export class Toolbar {
     d.append(this.pageNavSection);
 
     // Zoom
-    const zoomOut = this.btn(ICON_ZOOM_OUT, "Zoom out (Ctrl+−)", "icon-btn");
+    const zoomOut = this.btn(ICON_ZOOM_OUT, "Zoom out (Ctrl+\u2212)", "icon-btn");
+    this.reg(zoomOut, undefined, "ttZoomOut");
     zoomOut.addEventListener("click", () => this.emit({ type: "zoom-out" }));
 
     this.zoomInput = document.createElement("input");
     this.zoomInput.type = "text";
     this.zoomInput.className = "zoom-input";
     this.zoomInput.value = "150%";
-    this.zoomInput.title = "Zoom (entrée libre)";
+    this.zoomInput.title = "Zoom (free input)";
+    this.reg(this.zoomInput, undefined, "ttZoomInput");
     this.zoomInput.addEventListener("focus", () => this.zoomInput.select());
     this.zoomInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -230,21 +252,26 @@ export class Toolbar {
     });
 
     const zoomIn = this.btn(ICON_ZOOM_IN, "Zoom in (Ctrl++)", "icon-btn");
+    this.reg(zoomIn, undefined, "ttZoomIn");
     zoomIn.addEventListener("click", () => this.emit({ type: "zoom-in" }));
 
     const fitWidthBtn = this.btn(ICON_FIT_WIDTH, "Fit to width", "icon-btn");
+    this.reg(fitWidthBtn, undefined, "ttFitWidth");
     fitWidthBtn.addEventListener("click", () => this.emit({ type: "fit-width" }));
     const fitHeightBtn = this.btn(ICON_FIT_HEIGHT, "Fit to height", "icon-btn");
+    this.reg(fitHeightBtn, undefined, "ttFitHeight");
     fitHeightBtn.addEventListener("click", () => this.emit({ type: "fit-height" }));
 
     // Rotate
-    const rotateBtn = this.btn(ICON_ROTATE_CW, "Rotate 90° clockwise", "icon-btn");
+    const rotateBtn = this.btn(ICON_ROTATE_CW, "Rotate 90\u00b0 clockwise", "icon-btn");
+    this.reg(rotateBtn, undefined, "ttRotate");
     rotateBtn.addEventListener("click", () => this.emit({ type: "rotate" }));
 
     d.append(zoomOut, this.zoomInput, zoomIn, fitWidthBtn, fitHeightBtn, rotateBtn, this.sep());
 
     // Annotation mode toggle
-    this.modeBtn = this.btn("Annoter", "Mode annotation");
+    this.modeBtn = this.btn("Annotate", "Annotation mode");
+    this.reg(this.modeBtn, "btnAnnotate", "ttAnnotate");
     this.modeBtn.addEventListener("click", () => this.toggleMode());
     d.append(this.modeBtn, this.sep());
 
@@ -255,15 +282,16 @@ export class Toolbar {
     const ann = this.annotationSection;
 
     // Drawing tools
-    const tools: [ToolKind, string, string][] = [
-      ["rect",      ICON_RECT,               "Rectangle"],
-      ["circle",    ICON_CIRCLE,             "Circle"],
-      ["text",      ICON_EDITOR_FREE_TEXT,   "Text"],
-      ["signature", ICON_EDITOR_SIGNATURE,   "Signature"],
+    const tools: [ToolKind, string, string, keyof Translations][] = [
+      ["rect",      ICON_RECT,             "Rectangle", "ttRect"],
+      ["circle",    ICON_CIRCLE,           "Circle",    "ttCircle"],
+      ["text",      ICON_EDITOR_FREE_TEXT, "Text",      "ttText"],
+      ["signature", ICON_EDITOR_SIGNATURE, "Signature", "ttSignature"],
     ];
 
-    for (const [kind, icon, title] of tools) {
+    for (const [kind, icon, title, ttKey] of tools) {
       const b = this.btn(icon, title, "icon-btn");
+      this.reg(b, undefined, ttKey);
       b.addEventListener("click", () => {
         if (kind === "signature") {
           this.emit({ type: "signature" });
@@ -283,12 +311,22 @@ export class Toolbar {
 
     // Save / Save As / Print
     const saveBtn = this.btn("Save", "Save PDF");
+    this.reg(saveBtn, "btnSave", "ttSave");
     saveBtn.addEventListener("click", () => this.emit({ type: "save" }));
-    const saveAsBtn = this.btn("Save As…", "Save PDF as…");
+    const saveAsBtn = this.btn("Save As\u2026", "Save PDF as\u2026");
+    this.reg(saveAsBtn, "btnSaveAs", "ttSaveAs");
     saveAsBtn.addEventListener("click", () => this.emit({ type: "save-as" }));
     const printBtn = this.btn(ICON_PRINT, "Print", "icon-btn");
+    this.reg(printBtn, undefined, "ttPrint");
     printBtn.addEventListener("click", () => window.print());
     d.append(saveBtn, saveAsBtn, this.sep(), printBtn);
+
+    // Settings — always visible, pinned to the right
+    const settingsBtn = this.btn(ICON_SETTINGS, "Settings", "icon-btn");
+    this.reg(settingsBtn, undefined, "ttSettings");
+    settingsBtn.style.marginLeft = "auto";
+    settingsBtn.addEventListener("click", () => this.emit({ type: "settings" }));
+    this.el.append(settingsBtn);
   }
 
   private buildTextStyleSection(container: HTMLElement): void {
@@ -302,6 +340,7 @@ export class Toolbar {
     this.colorPicker.type = "color";
     this.colorPicker.className = "color-picker";
     this.colorPicker.title = "Text colour";
+    this.reg(this.colorPicker, undefined, "ttTextColor");
     this.colorPicker.value = rgbToHex(this.state.color);
     this.colorPicker.addEventListener("input", () => {
       this.state.color = hexToRgb(this.colorPicker.value);
@@ -327,6 +366,9 @@ export class Toolbar {
     this.boldBtn      = this.btn("B", "Bold",      "icon-btn");
     this.italicBtn    = this.btn("I", "Italic",    "icon-btn");
     this.underlineBtn = this.btn("U", "Underline", "icon-btn");
+    this.reg(this.boldBtn,      undefined, "ttBold");
+    this.reg(this.italicBtn,    undefined, "ttItalic");
+    this.reg(this.underlineBtn, undefined, "ttUnderline");
     this.boldBtn.style.fontWeight          = "700";
     this.italicBtn.style.fontStyle         = "italic";
     this.underlineBtn.style.textDecoration = "underline";
@@ -345,13 +387,14 @@ export class Toolbar {
     this.textStyleSection.append(this.boldBtn, this.italicBtn, this.underlineBtn);
 
     // Alignment
-    const alignDefs: [TextAlignmentValue, string, string][] = [
-      ["left", ICON_ALIGN_LEFT, "Align left"],
-      ["center", ICON_ALIGN_CENTER, "Align center"],
-      ["right", ICON_ALIGN_RIGHT, "Align right"],
+    const alignDefs: [TextAlignmentValue, string, string, keyof Translations][] = [
+      ["left",   ICON_ALIGN_LEFT,   "Align left",   "ttAlignLeft"],
+      ["center", ICON_ALIGN_CENTER, "Align center", "ttAlignCenter"],
+      ["right",  ICON_ALIGN_RIGHT,  "Align right",  "ttAlignRight"],
     ];
-    this.alignBtns = alignDefs.map(([val, icon, title]) => {
+    this.alignBtns = alignDefs.map(([val, icon, title, ttKey]) => {
       const b = this.btn(icon, title, "icon-btn");
+      this.reg(b, undefined, ttKey);
       b.dataset["align"] = val;
       if (val === "left") b.classList.add("active");
       b.addEventListener("click", () => {
@@ -365,8 +408,10 @@ export class Toolbar {
     this.textStyleSection.append(...this.alignBtns);
 
     // Layer order
-    const frontBtn = this.btn("↑", "Bring to front", "icon-btn");
-    const backBtn  = this.btn("↓", "Send to back",   "icon-btn");
+    const frontBtn = this.btn("\u2191", "Bring to front", "icon-btn");
+    const backBtn  = this.btn("\u2193", "Send to back",   "icon-btn");
+    this.reg(frontBtn, undefined, "ttBringFront");
+    this.reg(backBtn,  undefined, "ttSendBack");
     frontBtn.addEventListener("click", () => this.emit({ type: "layer-change", dir: "front" }));
     backBtn.addEventListener ("click", () => this.emit({ type: "layer-change", dir: "back"  }));
     this.textStyleSection.append(frontBtn, backBtn);
@@ -385,6 +430,7 @@ export class Toolbar {
     this.shapeColorPicker.type = "color";
     this.shapeColorPicker.className = "color-picker";
     this.shapeColorPicker.title = "Stroke colour";
+    this.reg(this.shapeColorPicker, undefined, "ttStrokeColor");
     this.shapeColorPicker.value = rgbToHex(this.state.color);
     this.shapeColorPicker.addEventListener("input", () => {
       this.state.color = hexToRgb(this.shapeColorPicker.value);
@@ -412,8 +458,10 @@ export class Toolbar {
     this.shapeStyleSection.append(strokeLabel, this.shapeStrokeInput);
 
     // Layer order
-    const frontBtn = this.btn("↑", "Bring to front", "icon-btn");
-    const backBtn  = this.btn("↓", "Send to back",   "icon-btn");
+    const frontBtn = this.btn("\u2191", "Bring to front", "icon-btn");
+    const backBtn  = this.btn("\u2193", "Send to back",   "icon-btn");
+    this.reg(frontBtn, undefined, "ttBringFront");
+    this.reg(backBtn,  undefined, "ttSendBack");
     frontBtn.addEventListener("click", () => this.emit({ type: "layer-change", dir: "front" }));
     backBtn.addEventListener ("click", () => this.emit({ type: "layer-change", dir: "back"  }));
     this.shapeStyleSection.append(frontBtn, backBtn);

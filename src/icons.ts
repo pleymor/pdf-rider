@@ -33,6 +33,9 @@ export const ICON_FIT_WIDTH = `<svg width="16" height="16" viewBox="0 0 16 16" f
 
 export const ICON_FIT_HEIGHT = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M8 1L10.5 3.5H8.75V12.5H10.5L8 15L5.5 12.5H7.25V3.5H5.5L8 1Z" fill="currentColor"/><path fill-rule="evenodd" clip-rule="evenodd" d="M2 5V11H3.5V5H2ZM12.5 5V11H14V5H12.5Z" fill="currentColor"/></svg>`;
 
+// Settings / gear icon
+export const ICON_SETTINGS = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M6.354 1.5a.5.5 0 0 0-.49.402l-.3 1.5a5.023 5.023 0 0 0-1.006.577l-1.455-.486a.5.5 0 0 0-.58.224l-1 1.732a.5.5 0 0 0 .1.62l1.128 1.014a5.07 5.07 0 0 0 0 1.154L1.623 9.251a.5.5 0 0 0-.1.62l1 1.732a.5.5 0 0 0 .58.224l1.455-.486c.312.22.648.41 1.006.577l.3 1.5a.5.5 0 0 0 .49.402h2a.5.5 0 0 0 .49-.402l.3-1.5a5.02 5.02 0 0 0 1.006-.577l1.455.486a.5.5 0 0 0 .58-.224l1-1.732a.5.5 0 0 0-.1-.62l-1.128-1.014a5.07 5.07 0 0 0 0-1.154l1.128-1.013a.5.5 0 0 0 .1-.62l-1-1.733a.5.5 0 0 0-.58-.224l-1.455.487a5.023 5.023 0 0 0-1.006-.578l-.3-1.5A.5.5 0 0 0 8.354 1.5h-2zm1 3.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm-1.5 3a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0z" fill="currentColor"/></svg>`;
+
 // Custom shape icons (not in pdf.js) drawn in the same style
 export const ICON_RECT = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M2 3C1.44772 3 1 3.44772 1 4V12C1 12.5523 1.44772 13 2 13H14C14.5523 13 15 12.5523 15 12V4C15 3.44772 14.5523 3 14 3H2ZM2.5 4.5V11.5H13.5V4.5H2.5Z" fill="currentColor"/></svg>`;
 

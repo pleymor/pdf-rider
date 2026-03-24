@@ -2,6 +2,8 @@ import { PdfViewer } from "./pdf-viewer";
 import { Toolbar } from "./toolbar";
 import { CanvasOverlay } from "./canvas-overlay";
 import { SignatureModal } from "./signature-modal";
+import { SettingsModal } from "./settings";
+import { getTranslations, applyTranslationsToDOM } from "./i18n";
 import { AnnotationStore } from "./annotation-store";
 import {
   defaultToolState,
@@ -61,6 +63,19 @@ const toolState = defaultToolState();
 const toolbar = new Toolbar();
 const overlay = new CanvasOverlay(toolState);
 const sigModal = new SignatureModal();
+const settingsModal = new SettingsModal();
+
+// Apply initial translations, then re-apply on language change
+{
+  const t = getTranslations(settingsModal.getSettings().language);
+  toolbar.applyTranslations(t);
+  applyTranslationsToDOM(t);
+}
+settingsModal.onChange(s => {
+  const t = getTranslations(s.language);
+  toolbar.applyTranslations(t);
+  applyTranslationsToDOM(t);
+});
 
 // Hide viewer until a PDF is loaded
 document.getElementById("viewer-container")!.style.display = "none";
@@ -595,6 +610,10 @@ toolbar.on(async (e) => {
 
     case "signature":
       sigModal.open();
+      break;
+
+    case "settings":
+      settingsModal.open();
       break;
   }
 });

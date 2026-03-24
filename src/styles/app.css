@@ -328,6 +328,58 @@ input[type="color"].color-picker {
   display: block;
 }
 
+/* ── Settings modal ─────────────────────────────────────────────────────── */
+
+.settings-box {
+  min-width: 320px;
+  max-width: 420px;
+  width: 100%;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+  margin-bottom: 2px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-label {
+  font-size: 13px;
+  color: #ccc;
+  white-space: nowrap;
+}
+
+.settings-select {
+  flex: 1;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  color: #e8e8e8;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-select:focus {
+  outline: none;
+  border-color: rgba(100, 170, 255, 0.6);
+}
+
 /* ── Toast ───────────────────────────────────────────────────────────────── */
 
 .toast {
