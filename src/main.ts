@@ -181,9 +181,14 @@ async function updateLinkLayer(): Promise<void> {
 
   let combined = "";
   const entries: SpanEntry[] = [];
+  let prevTop = NaN;
   for (const span of textLayerEl.querySelectorAll("span") as NodeListOf<HTMLSpanElement>) {
     const text = span.textContent ?? "";
     if (!text) continue;
+    const spanTop = parseFloat(span.style.top) || 0;
+    // Insert a space between spans on different lines so the URL regex cannot
+    // accidentally match across a line boundary into the next line's first word.
+    if (combined.length > 0 && Math.abs(spanTop - prevTop) > 2) combined += " ";
     const start = combined.length;
     combined += text;
     entries.push({
@@ -192,9 +197,10 @@ async function updateLinkLayer(): Promise<void> {
       end: combined.length,
       text,
       left:     parseFloat(span.style.left)     || 0,
-      top:      parseFloat(span.style.top)      || 0,
+      top:      spanTop,
       fontSize: parseFloat(span.style.fontSize) || 12,
     });
+    prevTop = spanTop;
   }
 
   // Return one tight rect per span that intersects the URL range.
