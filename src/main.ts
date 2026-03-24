@@ -26,6 +26,18 @@ import {
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask } from "@tauri-apps/plugin-dialog";
 
+// ── Zoom levels ───────────────────────────────────────────────────────────────
+
+const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
+
+function snapZoom(current: number, dir: 1 | -1): number {
+  if (dir === 1) {
+    return ZOOM_LEVELS.find(z => z > current + 0.005) ?? ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
+  } else {
+    return [...ZOOM_LEVELS].reverse().find(z => z < current - 0.005) ?? ZOOM_LEVELS[0];
+  }
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const appWindow = getCurrentWindow();
@@ -146,6 +158,7 @@ async function renderCurrentPage(): Promise<void> {
     viewer.currentViewport ?? undefined
   );
   toolbar.updatePageInfo(viewer.currentPage, viewer.pageCount);
+  toolbar.updateZoom(viewer.scale);
   void updateLinkLayer();
   await viewer.buildFormLayer(formLayerDiv, formValues, (name, val) => {
     formValues.set(name, val);
@@ -498,21 +511,24 @@ toolbar.on(async (e) => {
       break;
 
     case "zoom-in":
-      if (viewer.isLoaded()) {
-        await viewer.adjustZoom(0.25);
-        overlay.syncToPage(
-          viewer.currentPage,
-          viewer.scale,
-          viewer.pageHeightPt,
-          store.getForPage(viewer.currentPage),
-          viewer.currentViewport ?? undefined
-        );
-      }
+    case "zoom-out": {
+      if (!viewer.isLoaded()) break;
+      const newScale = snapZoom(viewer.scale, e.type === "zoom-in" ? 1 : -1);
+      await viewer.setScale(newScale);
+      overlay.syncToPage(
+        viewer.currentPage,
+        viewer.scale,
+        viewer.pageHeightPt,
+        store.getForPage(viewer.currentPage),
+        viewer.currentViewport ?? undefined
+      );
+      toolbar.updateZoom(viewer.scale);
       break;
+    }
 
-    case "zoom-out":
+    case "zoom-set":
       if (viewer.isLoaded()) {
-        await viewer.adjustZoom(-0.25);
+        await viewer.setScale(e.scale);
         overlay.syncToPage(
           viewer.currentPage,
           viewer.scale,
@@ -520,6 +536,7 @@ toolbar.on(async (e) => {
           store.getForPage(viewer.currentPage),
           viewer.currentViewport ?? undefined
         );
+        toolbar.updateZoom(viewer.scale);
       }
       break;
 
@@ -536,6 +553,7 @@ toolbar.on(async (e) => {
           store.getForPage(viewer.currentPage),
           viewer.currentViewport ?? undefined
         );
+        toolbar.updateZoom(viewer.scale);
         void updateLinkLayer();
       }
       break;
@@ -553,6 +571,7 @@ toolbar.on(async (e) => {
           store.getForPage(viewer.currentPage),
           viewer.currentViewport ?? undefined
         );
+        toolbar.updateZoom(viewer.scale);
         void updateLinkLayer();
       }
       break;
@@ -745,7 +764,23 @@ document.addEventListener("mousedown", (e: MouseEvent) => {
 });
 
 // Escape cancels pending signature or deselects active drawing tool
-window.addEventListener("keydown", (e: KeyboardEvent) => {
+// Ctrl++/- zooms in/out
+window.addEventListener("keydown", async (e: KeyboardEvent) => {
+  if (e.ctrlKey && (e.key === "+" || e.key === "=" || e.key === "-")) {
+    if (!viewer.isLoaded()) return;
+    e.preventDefault();
+    const newScale = snapZoom(viewer.scale, e.key === "-" ? -1 : 1);
+    await viewer.setScale(newScale);
+    overlay.syncToPage(
+      viewer.currentPage,
+      viewer.scale,
+      viewer.pageHeightPt,
+      store.getForPage(viewer.currentPage),
+      viewer.currentViewport ?? undefined
+    );
+    toolbar.updateZoom(viewer.scale);
+    return;
+  }
   if (e.key !== "Escape") return;
   if (pendingSignature) {
     pendingSignature = null;
@@ -760,6 +795,22 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
     toolbar.hideShapeStyles();
   }
 });
+
+// Ctrl+wheel zooms the document
+document.getElementById("viewer-scroll")!.addEventListener("wheel", async (e: WheelEvent) => {
+  if (!e.ctrlKey || !viewer.isLoaded()) return;
+  e.preventDefault();
+  const newScale = snapZoom(viewer.scale, e.deltaY < 0 ? 1 : -1);
+  await viewer.setScale(newScale);
+  overlay.syncToPage(
+    viewer.currentPage,
+    viewer.scale,
+    viewer.pageHeightPt,
+    store.getForPage(viewer.currentPage),
+    viewer.currentViewport ?? undefined
+  );
+  toolbar.updateZoom(viewer.scale);
+}, { passive: false });
 
 // ── Drag-drop ─────────────────────────────────────────────────────────────────
 

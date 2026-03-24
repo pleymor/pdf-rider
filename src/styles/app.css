@@ -119,6 +119,29 @@ label.toolbar-label {
   font-size: 11px;
 }
 
+.zoom-input {
+  width: 42px;
+  text-align: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: #aaa;
+  font-size: 11px;
+  padding: 2px 2px;
+  cursor: text;
+}
+
+.zoom-input:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.zoom-input:focus {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #e8e8e8;
+  outline: none;
+}
+
 input[type="number"].toolbar-input {
   width: 52px;
   padding: 3px 6px;

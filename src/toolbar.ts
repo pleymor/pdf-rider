@@ -33,6 +33,7 @@ type ToolbarEvent =
   | { type: "rotate" }
   | { type: "zoom-in" }
   | { type: "zoom-out" }
+  | { type: "zoom-set"; scale: number }
   | { type: "fit-width" }
   | { type: "fit-height" }
   | { type: "page-prev" }
@@ -57,6 +58,8 @@ export class Toolbar {
   private pageInput!: HTMLInputElement;
   private pageTotal!: HTMLSpanElement;
   private pageNavSection!: HTMLElement;
+  private zoomInput!: HTMLInputElement;
+  private _lastScale = 1.5;
   private toolBtns: Partial<Record<ToolKind, HTMLButtonElement>> = {};
 
   // Text style section
@@ -84,6 +87,13 @@ export class Toolbar {
 
   private emit(e: ToolbarEvent): void {
     this.handlers.forEach((h) => h(e));
+  }
+
+  updateZoom(scale: number): void {
+    this._lastScale = scale;
+    if (this.zoomInput && document.activeElement !== this.zoomInput) {
+      this.zoomInput.value = `${Math.round(scale * 100)}%`;
+    }
   }
 
   updatePageInfo(current: number, total: number): void {
@@ -196,9 +206,30 @@ export class Toolbar {
     d.append(this.pageNavSection);
 
     // Zoom
-    const zoomOut = this.btn(ICON_ZOOM_OUT, "Zoom out", "icon-btn");
+    const zoomOut = this.btn(ICON_ZOOM_OUT, "Zoom out (Ctrl+−)", "icon-btn");
     zoomOut.addEventListener("click", () => this.emit({ type: "zoom-out" }));
-    const zoomIn = this.btn(ICON_ZOOM_IN, "Zoom in", "icon-btn");
+
+    this.zoomInput = document.createElement("input");
+    this.zoomInput.type = "text";
+    this.zoomInput.className = "zoom-input";
+    this.zoomInput.value = "150%";
+    this.zoomInput.title = "Zoom (entrée libre)";
+    this.zoomInput.addEventListener("focus", () => this.zoomInput.select());
+    this.zoomInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        this.commitZoomInput();
+        this.zoomInput.blur();
+      } else if (e.key === "Escape") {
+        this.zoomInput.value = `${Math.round(this._lastScale * 100)}%`;
+        this.zoomInput.blur();
+      }
+    });
+    this.zoomInput.addEventListener("blur", () => {
+      // Reset to last known scale if not committed
+      this.zoomInput.value = `${Math.round(this._lastScale * 100)}%`;
+    });
+
+    const zoomIn = this.btn(ICON_ZOOM_IN, "Zoom in (Ctrl++)", "icon-btn");
     zoomIn.addEventListener("click", () => this.emit({ type: "zoom-in" }));
 
     const fitWidthBtn = this.btn(ICON_FIT_WIDTH, "Fit to width", "icon-btn");
@@ -210,7 +241,7 @@ export class Toolbar {
     const rotateBtn = this.btn(ICON_ROTATE_CW, "Rotate 90° clockwise", "icon-btn");
     rotateBtn.addEventListener("click", () => this.emit({ type: "rotate" }));
 
-    d.append(zoomOut, zoomIn, fitWidthBtn, fitHeightBtn, rotateBtn, this.sep());
+    d.append(zoomOut, this.zoomInput, zoomIn, fitWidthBtn, fitHeightBtn, rotateBtn, this.sep());
 
     // Annotation mode toggle
     this.modeBtn = this.btn("Annoter", "Mode annotation");
@@ -388,6 +419,17 @@ export class Toolbar {
     this.shapeStyleSection.append(frontBtn, backBtn);
 
     container.append(this.shapeStyleSection);
+  }
+
+  private commitZoomInput(): void {
+    const raw = this.zoomInput.value.replace("%", "").trim();
+    const pct = parseFloat(raw);
+    if (!isNaN(pct) && pct >= 10 && pct <= 500) {
+      const scale = Math.round(pct) / 100;
+      this._lastScale = scale;
+      this.zoomInput.value = `${Math.round(scale * 100)}%`;
+      this.emit({ type: "zoom-set", scale });
+    }
   }
 
   private emitStyleChange(): void {
