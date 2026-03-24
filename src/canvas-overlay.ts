@@ -108,6 +108,13 @@ export class CanvasOverlay {
     this.canvas.addEventListener("contextmenu",  this.onContextMenu);
     window.addEventListener("keydown", this.onKeyDown);
 
+    // In select mode the canvas has pointer-events:none by default so text
+    // selection works.  We listen on the viewer-container (always receives
+    // events) to detect when the cursor is over an annotation and temporarily
+    // flip pointer-events:auto so the canvas can handle clicks/drags.
+    document.getElementById("viewer-container")
+      ?.addEventListener("mousemove", this.onContainerMouseMove);
+
     this.applyPointerEvents(this.activeTool);
   }
 
@@ -545,6 +552,28 @@ export class CanvasOverlay {
   }
 
   // ── Mouse handlers ────────────────────────────────────────────────────────────
+
+  /** Runs on the parent viewer-container (always receives events regardless of
+   *  canvas pointer-events).  In select mode, enables pointer-events on the
+   *  canvas only when the cursor is actually over an annotation or resize handle,
+   *  keeping text selection available for the rest of the page. */
+  private onContainerMouseMove = (e: MouseEvent): void => {
+    if (this.activeTool !== "select") return;
+    if (this.dragging || this.resizing) return; // keep state stable mid-drag
+
+    const rect = this.canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+
+    const hitAnn = this.hitTest(cx, cy);
+    const hitH   = this.selected ? this.hitHandle(cx, cy, this.selected) : null;
+    const over   = hitAnn !== null || hitH !== null;
+
+    this.canvas.style.pointerEvents = over ? "auto" : "none";
+    this.canvas.style.cursor = over
+      ? (hitH ? HANDLE_CURSORS[hitH] : "grab")
+      : "default";
+  };
 
   private onMouseDown = (e: MouseEvent): void => {
     if (this.activeTool === "signature") return;
