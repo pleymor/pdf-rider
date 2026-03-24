@@ -118,8 +118,8 @@ export class PdfViewer {
 
     await page.render({ canvasContext: ctx, viewport }).promise;
 
-    // Render selectable text layer
-    void this.buildTextLayer(page, viewport);
+    // Render selectable text layer — must complete before link layer can scan the DOM
+    await this.buildTextLayer(page, viewport);
 
     this.onPageChangedCb?.(this._currentPage, this._pageCount);
     this.canvas.dispatchEvent(
@@ -227,25 +227,22 @@ export class PdfViewer {
     this.textLayerDiv.appendChild(fragment);
   }
 
-  /** Returns link annotations for the current page (subtype "Link" with a URL).
-   *  Multi-line links may have QuadPoints; each quad becomes its own rect entry.
-   *  Also detects bare URLs embedded in text content (not formal link annotations). */
+  /** Returns formal Link annotations for the current page with their viewport rects.
+   *  QuadPoints are used when present (multi-line links); otherwise the annotation rect.
+   *  Bare text URLs and accurate link hit-rects are computed in the UI layer via DOM
+   *  scanning after the text layer has been rendered. */
   async getPageLinkAnnotations(): Promise<Array<{ url: string; rect: [number, number, number, number] }>> {
     if (!this.pdfDoc || !this._viewport) return [];
     const page = await this.pdfDoc.getPage(this._currentPage);
-    const [annotations, textContent] = await Promise.all([
-      page.getAnnotations(),
-      page.getTextContent(),
-    ]);
+    const annotations = await page.getAnnotations();
     const viewport = this._viewport;
     const result: Array<{ url: string; rect: [number, number, number, number] }> = [];
 
-    // 1. Formal link annotations
     for (const ann of annotations) {
       if (ann.subtype !== "Link") continue;
       const url: string | undefined = ann.url ?? ann.unsafeUrl;
       if (!url || (!url.startsWith("http://") && !url.startsWith("https://"))) continue;
-      // QuadPoints: flat array [x1,y1,x2,y2,x3,y3,x4,y4, ...] — one quad per line of text
+
       const quads = ann.quadPoints as number[] | undefined;
       if (quads && quads.length >= 8) {
         for (let i = 0; i + 7 < quads.length; i += 8) {
@@ -258,43 +255,11 @@ export class PdfViewer {
           result.push({ url, rect: [x1, y1, x2, y2] });
         }
       } else {
-        const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(ann.rect as [number, number, number, number]);
+        const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(
+          ann.rect as [number, number, number, number]
+        );
         result.push({ url, rect: [x1, y1, x2, y2] });
       }
-    }
-
-    // 2. Bare URLs in text content (not wrapped in a link annotation)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tItems = textContent.items.filter((it): it is any => "str" in it) as
-      Array<{ str: string; transform: number[]; width: number; height: number }>;
-    // Build a concatenated string keeping per-item start offsets
-    let combined = "";
-    const offsets: Array<{ item: { str: string; transform: number[]; width: number; height: number }; start: number }> = [];
-    for (const item of tItems) {
-      offsets.push({ item, start: combined.length });
-      combined += item.str;
-    }
-    const annotatedUrls = new Set(result.map((r) => r.url));
-    const urlRe = /https?:\/\/[^\s)\]>"]+/g;
-    let m: RegExpExecArray | null;
-    while ((m = urlRe.exec(combined)) !== null) {
-      const url = m[0];
-      if (annotatedUrls.has(url)) continue; // already covered by a formal annotation
-      const urlStart = m.index;
-      const urlEnd = urlStart + url.length;
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (const { item, start } of offsets) {
-        const end = start + item.str.length;
-        if (end <= urlStart || start >= urlEnd) continue;
-        const [, , , , x, y] = item.transform;
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x + item.width);
-        minY = Math.min(minY, y);
-        maxY = Math.max(maxY, y + item.height);
-      }
-      if (!isFinite(minX)) continue;
-      const [vx1, vy1, vx2, vy2] = viewport.convertToViewportRectangle([minX, minY, maxX, maxY]);
-      result.push({ url, rect: [vx1, vy1, vx2, vy2] });
     }
 
     return result;

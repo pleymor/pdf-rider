@@ -51,6 +51,9 @@ export class Toolbar {
 
   private el: HTMLElement;
   private documentSection!: HTMLElement;
+  private annotationSection!: HTMLElement;
+  private modeBtn!: HTMLButtonElement;
+  private isAnnotationMode = false;
   private pageInput!: HTMLInputElement;
   private pageTotal!: HTMLSpanElement;
   private pageNavSection!: HTMLElement;
@@ -209,6 +212,17 @@ export class Toolbar {
 
     d.append(zoomOut, zoomIn, fitWidthBtn, fitHeightBtn, rotateBtn, this.sep());
 
+    // Annotation mode toggle
+    this.modeBtn = this.btn("Annoter", "Mode annotation");
+    this.modeBtn.addEventListener("click", () => this.toggleMode());
+    d.append(this.modeBtn, this.sep());
+
+    // Annotation-only section (hidden in read mode)
+    this.annotationSection = document.createElement("div");
+    this.annotationSection.style.cssText = "display:none;align-items:center;gap:4px;";
+    d.append(this.annotationSection);
+    const ann = this.annotationSection;
+
     // Drawing tools
     const tools: [ToolKind, string, string][] = [
       ["rect",      ICON_RECT,               "Rectangle"],
@@ -227,14 +241,14 @@ export class Toolbar {
         this.setActiveTool(kind);
       });
       this.toolBtns[kind] = b;
-      d.append(b);
+      ann.append(b);
     }
 
     // Contextual style sections (hidden by default)
-    this.buildTextStyleSection(d);
-    this.buildShapeStyleSection(d);
+    this.buildTextStyleSection(ann);
+    this.buildShapeStyleSection(ann);
 
-    d.append(this.sep());
+    ann.append(this.sep());
 
     // Save / Save As / Print
     const saveBtn = this.btn("Save", "Save PDF");
@@ -389,6 +403,17 @@ export class Toolbar {
       btn.classList.toggle("active", kind === tool);
     }
     this.emit({ type: "tool-change", tool });
+  }
+
+  private toggleMode(): void {
+    this.isAnnotationMode = !this.isAnnotationMode;
+    this.modeBtn.classList.toggle("active", this.isAnnotationMode);
+    this.annotationSection.style.display = this.isAnnotationMode ? "flex" : "none";
+    if (!this.isAnnotationMode) {
+      this.clearActiveTool();
+      this.hideTextStyles();
+      this.hideShapeStyles();
+    }
   }
 
   clearActiveTool(): void {

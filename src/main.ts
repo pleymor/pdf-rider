@@ -44,10 +44,6 @@ const store = new AnnotationStore();
 const toolState = defaultToolState();
 const toolbar = new Toolbar();
 const overlay = new CanvasOverlay(toolState);
-overlay.onHoverCursor = (offsetX, offsetY) =>
-  pageLinks.some((l) => offsetX >= l.left && offsetX <= l.right && offsetY >= l.top && offsetY <= l.bottom)
-    ? "pointer"
-    : "";
 const sigModal = new SignatureModal();
 
 // Hide viewer until a PDF is loaded
@@ -149,15 +145,140 @@ async function renderCurrentPage(): Promise<void> {
   void updateLinkLayer();
 }
 
-// Stored link rects (canvas-px coords) for the current page — checked in viewer mousedown
+// Stored link rects (canvas-px coords) for the current page — used for cursor detection
 let pageLinks: { url: string; left: number; top: number; right: number; bottom: number }[] = [];
 
+const linkLayerEl = document.getElementById("link-layer")!;
+
 async function updateLinkLayer(): Promise<void> {
-  const links = await viewer.getPageLinkAnnotations();
-  pageLinks = links.map(({ url, rect }) => {
-    const [x1, y1, x2, y2] = rect;
-    return { url, left: Math.min(x1, x2), top: Math.min(y1, y2), right: Math.max(x1, x2), bottom: Math.max(y1, y2) };
-  });
+  const canvas = document.getElementById("pdf-canvas") as HTMLCanvasElement;
+  linkLayerEl.innerHTML = "";
+  linkLayerEl.style.width  = canvas.style.width;
+  linkLayerEl.style.height = canvas.style.height;
+  pageLinks = [];
+
+  // Use the inline CSS styles set by buildTextLayer (left, top, fontSize, transform)
+  // to compute URL hit rects.  This avoids getBoundingClientRect() coordinate
+  // ambiguity: span.style.left is already in CSS-px relative to #viewer-container,
+  // which is the same coordinate space as our #link-layer children.
+  const textLayerEl = document.getElementById("text-layer") as HTMLElement;
+  const mc = document.createElement("canvas").getContext("2d")!;
+
+  const measure = (text: string, span: HTMLSpanElement): number => {
+    mc.font = `${span.style.fontSize} ${span.style.fontFamily || "sans-serif"}`;
+    return mc.measureText(text).width;
+  };
+
+  interface SpanEntry {
+    span: HTMLSpanElement;
+    start: number;
+    end: number;
+    text: string;
+    left: number;     // parseFloat(span.style.left)  — CSS px from viewer-container left
+    top: number;      // parseFloat(span.style.top)   — CSS px from viewer-container top
+    fontSize: number; // parseFloat(span.style.fontSize)
+  }
+
+  let combined = "";
+  const entries: SpanEntry[] = [];
+  for (const span of textLayerEl.querySelectorAll("span") as NodeListOf<HTMLSpanElement>) {
+    const text = span.textContent ?? "";
+    if (!text) continue;
+    const start = combined.length;
+    combined += text;
+    entries.push({
+      span,
+      start,
+      end: combined.length,
+      text,
+      left:     parseFloat(span.style.left)     || 0,
+      top:      parseFloat(span.style.top)      || 0,
+      fontSize: parseFloat(span.style.fontSize) || 12,
+    });
+  }
+
+  // Return one tight rect per span that intersects the URL range.
+  // Multi-line URLs get one rect per line (one per span), NOT a merged union — a union
+  // would span from the wrapped line's left margin to the first line's right edge,
+  // creating an enormous hit area that covers non-URL text.
+  // scaleX is intentionally NOT applied: PDFs sometimes set item.width to the full
+  // paragraph width (to define the link annotation area), which would make scaleX >> 1
+  // and inflate hit rects far beyond the visible URL text.
+  type Rect = { left: number; top: number; right: number; bottom: number };
+  const domRectsForRange = (urlStart: number, urlEnd: number): Rect[] => {
+    const rects: Rect[] = [];
+    for (const e of entries) {
+      if (e.end <= urlStart || e.start >= urlEnd) continue;
+      const urlL = Math.max(e.start, urlStart) - e.start;
+      const urlR = Math.min(e.end,   urlEnd)   - e.start;
+      const clipL = e.left + measure(e.text.slice(0, urlL), e.span);
+      const clipR = e.left + measure(e.text.slice(0, urlR), e.span);
+      if (clipR > clipL) {
+        rects.push({ left: clipL, top: e.top, right: clipR, bottom: e.top + e.fontSize });
+      }
+    }
+    return rects;
+  };
+
+  // Scan visible text for URLs; group rects per URL
+  const urlRe = /https?:\/\/[^\s)\]>"]+/g;
+  let m: RegExpExecArray | null;
+  const domLinks = new Map<string, Rect[]>();
+  while ((m = urlRe.exec(combined)) !== null) {
+    const rects = domRectsForRange(m.index, m.index + m[0].length);
+    if (rects.length > 0) {
+      if (!domLinks.has(m[0])) domLinks.set(m[0], []);
+      domLinks.get(m[0])!.push(...rects);
+    }
+  }
+
+  // Merge with formal PDF link annotations.
+  // DOM-found rects take priority (one <a> per line segment).
+  // Annotation rect is fallback for image/button links with no visible URL text.
+  const annotations = await viewer.getPageLinkAnnotations();
+  const addedUrls = new Set<string>();
+
+  const addLink = (url: string, rects: Rect[]) => {
+    addedUrls.add(url);
+    for (const r of rects) pageLinks.push({ url, ...r });
+  };
+
+  for (const { url, rect } of annotations) {
+    if (addedUrls.has(url)) continue;
+    let domRects: Rect[] | undefined;
+    for (const [domUrl, rects] of domLinks) {
+      if (domUrl === url) { domRects = rects; break; }
+      const n = Math.min(domUrl.length, url.length);
+      if (n >= 10 && domUrl.slice(0, n) === url.slice(0, n)) { domRects = rects; }
+    }
+    if (domRects) {
+      addLink(url, domRects);
+    } else {
+      const [x1, y1, x2, y2] = rect;
+      addLink(url, [{ left: Math.min(x1, x2), top: Math.min(y1, y2), right: Math.max(x1, x2), bottom: Math.max(y1, y2) }]);
+    }
+  }
+
+  // Add DOM-discovered URLs not covered by a formal annotation
+  for (const [url, rects] of domLinks) {
+    if (!addedUrls.has(url)) addLink(url, rects);
+  }
+
+  // Render one <a> per line segment
+  for (const link of pageLinks) {
+    const a = document.createElement("a");
+    a.style.cssText = [
+      `left:${link.left}px`,
+      `top:${link.top}px`,
+      `width:${link.right - link.left}px`,
+      `height:${link.bottom - link.top}px`,
+    ].join(";");
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      void openUrl(link.url);
+    });
+    linkLayerEl.appendChild(a);
+  }
 }
 
 async function promptPassword(fp: string): Promise<void> {
@@ -503,32 +624,6 @@ document.getElementById("viewer-container")!.addEventListener("click", (e: Mouse
   pendingSignature = null;
   (e.currentTarget as HTMLElement).style.cursor = "";
   toolbar.clearActiveTool();
-});
-
-// Track mousedown position so we can distinguish a click from a drag-to-select.
-let mouseDownX = 0;
-let mouseDownY = 0;
-document.getElementById("viewer-container")!.addEventListener("mousedown", (e: MouseEvent) => {
-  mouseDownX = e.clientX;
-  mouseDownY = e.clientY;
-});
-
-// Open PDF link annotations on a clean click (not a drag-to-select).
-document.getElementById("viewer-container")!.addEventListener("click", (e: MouseEvent) => {
-  if (overlay.currentTool !== "select" || pendingSignature) return;
-  if (editingTextAnn || editingShapeAnn) return;
-  // If the mouse moved more than 5 px, the user was selecting text — don't open link.
-  if (Math.hypot(e.clientX - mouseDownX, e.clientY - mouseDownY) > 5) return;
-  const el = document.getElementById("viewer-container")!;
-  const rect = el.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  for (const link of pageLinks) {
-    if (x >= link.left && x <= link.right && y >= link.top && y <= link.bottom) {
-      void openUrl(link.url);
-      break;
-    }
-  }
 });
 
 // ── Context menu ──────────────────────────────────────────────────────────────

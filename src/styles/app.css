@@ -190,13 +190,28 @@ input[type="color"].color-picker {
   color: transparent;
 }
 
+#link-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  z-index: 2;
+  pointer-events: none;
+}
+
+#link-layer a {
+  position: absolute;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 #annotation-canvas {
   position: absolute;
   top: 0;
   left: 0;
   pointer-events: none; /* controlled by JS: auto for draw tools, none for select/read */
   background: transparent;
-  z-index: 2;
+  z-index: 3;
 }
 
 
