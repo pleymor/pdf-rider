@@ -246,6 +246,8 @@ export class PdfViewer {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const annotations: any[] = await (this.currentPageObj as any).getAnnotations({ intent: "display" });
 
+    const fieldEls: { el: HTMLElement; top: number }[] = [];
+
     for (const a of annotations) {
       if (a.subtype !== "Widget") continue;
       if (a.hidden || a.readOnly) continue;
@@ -292,6 +294,7 @@ export class PdfViewer {
           inp.style.width  = `${width}px`;
           inp.style.height = `${height}px`;
           container.appendChild(inp);
+          fieldEls.push({ el: inp, top });
           continue; // skip generic positioning below
         } else if (a.radioButton) {
           const inp = document.createElement("input");
@@ -308,6 +311,7 @@ export class PdfViewer {
           inp.style.width  = `${width}px`;
           inp.style.height = `${height}px`;
           container.appendChild(inp);
+          fieldEls.push({ el: inp, top });
           continue;
         } else {
           continue; // push button — skip
@@ -335,6 +339,20 @@ export class PdfViewer {
       el.style.height    = `${height}px`;
       el.style.fontSize  = `${fontSize}px`;
       container.appendChild(el);
+      fieldEls.push({ el, top });
+    }
+
+    // Sort by vertical position and wire up arrow-key navigation
+    fieldEls.sort((a, b) => a.top - b.top);
+    const els = fieldEls.map(f => f.el);
+    for (let i = 0; i < els.length; i++) {
+      els[i].addEventListener("keydown", (e: Event) => {
+        const ke = e as KeyboardEvent;
+        if (ke.key !== "ArrowDown" && ke.key !== "ArrowUp") return;
+        ke.preventDefault();
+        const next = ke.key === "ArrowDown" ? els[i + 1] : els[i - 1];
+        if (next) next.focus();
+      });
     }
   }
 
