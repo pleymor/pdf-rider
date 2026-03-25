@@ -18,8 +18,8 @@ export class CompressModal {
   }
 
   applyTranslations(t: Translations): void {
-    this._i18nText.forEach((key, el)  => { el.textContent = t[key]; });
-    this._i18nTitle.forEach((key, el) => { el.title = t[key]; });
+    this._i18nText.forEach((key, el)  => { el.textContent = t[key] ?? null; });
+    this._i18nTitle.forEach((key, el) => { el.title = t[key] ?? ""; });
   }
 
   onConfirm(cb: ConfirmHandler): void {

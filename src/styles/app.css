@@ -380,6 +380,20 @@ input[type="color"].color-picker {
   border-color: rgba(100, 170, 255, 0.6);
 }
 
+.settings-btn {
+  padding: 4px 12px;
+  background: rgba(100, 170, 255, 0.15);
+  border: 1px solid rgba(100, 170, 255, 0.4);
+  border-radius: 2px;
+  color: #e8e8e8;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings-btn:hover { background: rgba(100, 170, 255, 0.25); }
+.settings-btn:disabled { opacity: 0.5; cursor: default; }
+
 /* ── Compress modal ─────────────────────────────────────────────────────── */
 
 .compress-box {

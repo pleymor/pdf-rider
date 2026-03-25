@@ -1,4 +1,4 @@
-// ── Types ─────────────────────────────────────────────────────────────────────
+﻿// ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface Translations {
   // Toolbar button labels
@@ -46,6 +46,9 @@ export interface Translations {
   settingsClose: string;
   settingsInterface: string;
   settingsLanguage: string;
+  settingsDefaultApp?: string;
+  settingsSetDefault?: string;
+  settingsRemoveDefault?: string;
   // Compress modal
   btnCompress: string;
   ttCompress: string;
@@ -121,7 +124,10 @@ const EN: Translations = {
   compressApply:     "Compress \u0026 Save As\u2026",
   compressFlattenDesc: "Remove interactive fields",
   compressFlatten:     "Flatten forms",
-  ctxCopy:           "Copy",
+  ctxCopy:             "Copy",
+  settingsDefaultApp:  "Default App",
+  settingsSetDefault:  "Set as default PDF viewer",
+  settingsRemoveDefault: "Remove as default",
 };
 
 // ── French ────────────────────────────────────────────────────────────────────
@@ -181,7 +187,10 @@ const FR: Translations = {
   compressApply:     "Compresser et enreg. sous\u2026",
   compressFlattenDesc: "Supprime les champs interactifs",
   compressFlatten:     "Aplatir les formulaires",
-  ctxCopy:           "Copier",
+  ctxCopy:             "Copier",
+  settingsDefaultApp:  "Application par d\u00e9faut",
+  settingsSetDefault:  "D\u00e9finir comme visionneuse PDF par d\u00e9faut",
+  settingsRemoveDefault: "Retirer l\u2019association PDF",
 };
 
 // ── Chinese (Mandarin) ────────────────────────────────────────────────────────
@@ -1283,10 +1292,12 @@ export function getTranslations(lang: string): Translations {
 export function applyTranslationsToDOM(t: Translations): void {
   document.querySelectorAll<HTMLElement>("[data-i18n]").forEach(el => {
     const key = el.dataset["i18n"] as keyof Translations;
-    if (key in t) el.textContent = t[key];
+    const val = key in t ? t[key] : undefined;
+    if (val != null) el.textContent = val;
   });
   document.querySelectorAll<HTMLElement>("[data-i18n-title]").forEach(el => {
     const key = el.dataset["i18nTitle"] as keyof Translations;
-    if (key in t) el.title = t[key];
+    const val = key in t ? t[key] : undefined;
+    if (val != null) el.title = val;
   });
 }

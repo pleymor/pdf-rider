@@ -80,7 +80,12 @@ export async function registerPdfHandler(): Promise<void> {
   return invoke<void>("register_pdf_handler");
 }
 
-/** Silently registers the print verb under both ProgIDs (called at every startup). */
+/** Removes all HKCU registry entries created by registerPdfHandler. */
+export async function unregisterPdfHandler(): Promise<void> {
+  return invoke<void>("unregister_pdf_handler");
+}
+
+/** Registers the print verb under both ProgIDs. */
 export async function registerPrintVerb(): Promise<void> {
   return invoke<void>("register_print_verb");
 }

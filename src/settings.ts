@@ -1,3 +1,12 @@
+import {
+  checkPdfAssociation,
+  registerPdfHandler,
+  unregisterPdfHandler,
+  registerPrintVerb,
+  openDefaultAppsSettings,
+} from "./tauri-bridge";
+import { getTranslations } from "./i18n";
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface AppSettings {
@@ -70,7 +79,10 @@ export class SettingsModal {
     this.changeHandlers.push(cb);
   }
 
-  open(): void  { this.backdrop.classList.remove("hidden"); }
+  open(): void {
+    this.backdrop.classList.remove("hidden");
+    void this.refreshDefaultBtn();
+  }
   close(): void { this.backdrop.classList.add("hidden"); }
 
   private set<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void {
@@ -89,6 +101,28 @@ export class SettingsModal {
     }
   }
 
+  private async refreshDefaultBtn(): Promise<void> {
+    const btn = document.getElementById("settings-default-btn") as HTMLButtonElement;
+    if (!btn) return;
+    try {
+      const isSet = await checkPdfAssociation();
+      const t = this.getSettings();
+      const lang = t.language;
+      // Use translated strings if available, else fall back to English
+      const translations = getTranslations(lang);
+      if (isSet) {
+        btn.textContent = translations.settingsRemoveDefault ?? "Remove as default";
+        btn.dataset["state"] = "remove";
+      } else {
+        btn.textContent = translations.settingsSetDefault ?? "Set as default PDF viewer";
+        btn.dataset["state"] = "set";
+      }
+    } catch {
+      // Not running in Tauri (browser preview)
+      btn.style.display = "none";
+    }
+  }
+
   private bind(): void {
     document.getElementById("settings-close-btn")!
       .addEventListener("click", () => this.close());
@@ -104,5 +138,28 @@ export class SettingsModal {
     langSelect.addEventListener("change", () => {
       this.set("language", langSelect.value);
     });
+
+    // Default app button
+    const defaultBtn = document.getElementById("settings-default-btn") as HTMLButtonElement;
+    defaultBtn?.addEventListener("click", () => void this.handleDefaultBtn());
+  }
+
+  private async handleDefaultBtn(): Promise<void> {
+    const btn = document.getElementById("settings-default-btn") as HTMLButtonElement;
+    btn.disabled = true;
+    try {
+      if (btn.dataset["state"] === "set") {
+        await registerPdfHandler();
+        await registerPrintVerb();
+        void openDefaultAppsSettings();
+      } else {
+        await unregisterPdfHandler();
+      }
+      await this.refreshDefaultBtn();
+    } catch {
+      // ignore errors silently
+    } finally {
+      btn.disabled = false;
+    }
   }
 }

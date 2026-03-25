@@ -23,9 +23,6 @@ import {
   compressPdf,
   readAnnotations,
   getStartupArgs,
-  checkPdfAssociation,
-  registerPdfHandler,
-  registerPrintVerb,
   printPages,
   openUrl,
 } from "./tauri-bridge";
@@ -95,8 +92,6 @@ document.getElementById("viewer-container")!.style.display = "none";
 
 (async () => {
   try {
-    void registerPrintVerb(); // always register print verb silently
-
     const startup = await getStartupArgs();
 
     if (startup.filePath) {
@@ -108,26 +103,6 @@ document.getElementById("viewer-container")!.style.display = "none";
         await appWindow.close();
       } else {
         await loadPdf(startup.filePath);
-      }
-    } else {
-      const associated = await checkPdfAssociation();
-      if (!associated) {
-        const ok = await ask(
-          "PDF Reader is not registered as a PDF handler.\n\n" +
-            "Register now? This adds 'Open' and 'Print' verbs to Explorer's context menu " +
-            "and sets PDF Reader as your default PDF viewer.",
-          { title: "Register as PDF viewer", kind: "info" }
-        );
-        if (ok) {
-          try {
-            await registerPdfHandler();
-            showToast(
-              "Registered. To confirm as default, check Windows Settings → Default Apps."
-            );
-          } catch (e) {
-            showToast(`Registration failed: ${e}`, true);
-          }
-        }
       }
     }
   } catch {
