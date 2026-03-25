@@ -647,6 +647,77 @@ toolbar.on(async (e) => {
   }
 });
 
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
+document.addEventListener("keydown", async (e) => {
+  // Don't fire while typing in any input or contenteditable
+  const tag = (document.activeElement as HTMLElement)?.tagName ?? "";
+  if (tag === "INPUT" || tag === "TEXTAREA" ||
+      (document.activeElement as HTMLElement)?.isContentEditable) return;
+
+  const ctrl  = e.ctrlKey || e.metaKey;
+  const shift = e.shiftKey;
+
+  // Ctrl+O — Open
+  if (ctrl && !shift && e.key === "o") {
+    e.preventDefault();
+    if (await confirmUnsaved()) await openFile();
+    return;
+  }
+  // Ctrl+Shift+S — Save As  (must be checked before plain Ctrl+S)
+  if (ctrl && shift && e.key === "S") {
+    e.preventDefault();
+    await saveFile(true);
+    return;
+  }
+  // Ctrl+S — Save
+  if (ctrl && !shift && e.key === "s") {
+    e.preventDefault();
+    await saveFile(false);
+    return;
+  }
+  // Ctrl+P — Print
+  if (ctrl && !shift && e.key === "p") {
+    e.preventDefault();
+    window.print();
+    return;
+  }
+  // Ctrl+Shift+E — Compress
+  if (ctrl && shift && e.key === "E") {
+    e.preventDefault();
+    if (filePath) compressModal.open();
+    return;
+  }
+  // Ctrl++ / Ctrl+= — Zoom in
+  if (ctrl && (e.key === "+" || e.key === "=")) {
+    e.preventDefault();
+    if (viewer.isLoaded()) { await viewer.setScale(snapZoom(viewer.scale, 1));  await syncAllLayers(); }
+    return;
+  }
+  // Ctrl+- — Zoom out
+  if (ctrl && e.key === "-") {
+    e.preventDefault();
+    if (viewer.isLoaded()) { await viewer.setScale(snapZoom(viewer.scale, -1)); await syncAllLayers(); }
+    return;
+  }
+  // Ctrl+0 — Reset zoom to 100%
+  if (ctrl && e.key === "0") {
+    e.preventDefault();
+    if (viewer.isLoaded()) { await viewer.setScale(1.0); await syncAllLayers(); }
+    return;
+  }
+  // ArrowRight / PageDown — Next page
+  if (!ctrl && (e.key === "ArrowRight" || e.key === "PageDown")) {
+    if (viewer.isLoaded()) { e.preventDefault(); await viewer.nextPage();  await syncAllLayers(); }
+    return;
+  }
+  // ArrowLeft / PageUp — Previous page
+  if (!ctrl && (e.key === "ArrowLeft" || e.key === "PageUp")) {
+    if (viewer.isLoaded()) { e.preventDefault(); await viewer.prevPage();  await syncAllLayers(); }
+    return;
+  }
+});
+
 // ── Annotation events ─────────────────────────────────────────────────────────
 
 overlay.onAnnotationCreated((ann: Annotation) => {
