@@ -19,6 +19,7 @@ import {
 interface PdfViewport {
   convertToViewportPoint(pdfX: number, pdfY: number): number[];
   convertToPdfPoint(viewX: number, viewY: number): number[];
+  rotation: number;
 }
 
 type AnnotationCreatedHandler      = (ann: Annotation) => void;
@@ -75,6 +76,7 @@ export class CanvasOverlay {
   private pageHeightPt = 841;
   private scale = 1.5;
   private viewport: PdfViewport | null = null;
+  private viewportRotation = 0;
 
   // ── Callbacks ───────────────────────────────────────────────────────────────
   private createdHandlers:      AnnotationCreatedHandler[]      = [];
@@ -218,7 +220,8 @@ export class CanvasOverlay {
     this.currentPage  = page;
     this.scale        = scale;
     this.pageHeightPt = pageHeightPt;
-    this.viewport     = viewport ?? null;
+    this.viewport         = viewport ?? null;
+    this.viewportRotation = viewport?.rotation ?? 0;
     this.selected = null;
     this.dragging = false;
     this.resizing = false;
@@ -238,16 +241,28 @@ export class CanvasOverlay {
   private getAnnBounds(ann: Annotation): { left: number; top: number; right: number; bottom: number } {
     const { scale } = this;
     if (ann.kind === "text") {
-      // ann.y is the baseline. Compute the canvas position of the baseline.
-      const [bx, by] = this.toCanvas(ann.x, ann.y);
-      const [bxRight] = this.toCanvas(ann.x + ann.width, ann.y);
-      const left   = Math.min(bx, bxRight);
-      const right  = Math.max(bx, bxRight);
-      const lineH  = ann.fontSize * scale * 1.2;
+      const [bx, by]  = this.toCanvas(ann.x, ann.y);
+      const lineH     = ann.fontSize * scale * 1.2;
       const lineCount = this.textLineCount(ann);
-      const top    = by - 2 - ann.fontSize * scale;
-      const bottom = top + lineCount * lineH + 4;
-      return { left, top, right, bottom };
+      const maxW      = ann.width * scale;
+      const localTop    = -2 - ann.fontSize * scale;
+      const localBottom = lineCount * lineH + 2;
+
+      if (this.viewportRotation === 0) {
+        return { left: bx, right: bx + maxW, top: by + localTop, bottom: by + localBottom };
+      }
+      const cos = Math.cos((this.viewportRotation * Math.PI) / 180);
+      const sin = Math.sin((this.viewportRotation * Math.PI) / 180);
+      const corners: [number, number][] = [
+        [0,    localTop],    [maxW, localTop],
+        [maxW, localBottom], [0,    localBottom],
+      ];
+      const xs = corners.map(([lx, ly]) => bx + lx * cos - ly * sin);
+      const ys = corners.map(([lx, ly]) => by + lx * sin + ly * cos);
+      return {
+        left: Math.min(...xs), right: Math.max(...xs),
+        top:  Math.min(...ys), bottom: Math.max(...ys),
+      };
     } else {
       // Convert the two opposite PDF corners and take the axis-aligned bounding box.
       const [x1, y1] = this.toCanvas(ann.x, ann.y + ann.height);            // PDF top-left
@@ -444,20 +459,24 @@ export class CanvasOverlay {
 
     } else if (ann.kind === "text") {
       const [x, y] = this.toCanvas(ann.x, ann.y);
+      const rotRad = (this.viewportRotation * Math.PI) / 180;
+      ctx.save();
+      ctx.translate(x, y);
+      if (rotRad !== 0) ctx.rotate(rotRad);
       ctx.fillStyle = rgbToCss(ann.color);
       ctx.font      = `${ann.italic ? "italic" : "normal"} ${ann.bold ? "bold" : "normal"} ${ann.fontSize * scale}px Helvetica, Arial, sans-serif`;
       ctx.textAlign = ann.alignment as CanvasTextAlign;
       const lineH   = ann.fontSize * scale * 1.2;
       const maxW    = ann.width * scale;
-      const tx      = ann.alignment === "left" ? x : ann.alignment === "right" ? x + maxW : x + maxW / 2;
+      const tx      = ann.alignment === "left" ? 0 : ann.alignment === "right" ? maxW : maxW / 2;
       const lines   = this.wrapLines(ctx, ann.content, maxW);
       lines.forEach((line, i) => {
-        const ly = y + i * lineH;
+        const ly = i * lineH;
         ctx.fillText(line, tx, ly);
         if (ann.underline) {
           const w      = ctx.measureText(line).width;
           const ulY    = ly + ann.fontSize * scale * 0.12;
-          const startX = ann.alignment === "left" ? x : ann.alignment === "right" ? tx - w : tx - w / 2;
+          const startX = ann.alignment === "left" ? 0 : ann.alignment === "right" ? tx - w : tx - w / 2;
           ctx.strokeStyle = rgbToCss(ann.color);
           ctx.lineWidth   = 1;
           ctx.beginPath();
@@ -466,6 +485,7 @@ export class CanvasOverlay {
           ctx.stroke();
         }
       });
+      ctx.restore();
 
     } else if (ann.kind === "signature") {
       const [x1, y1] = this.toCanvas(ann.x,             ann.y + ann.height); // canvas top-left
