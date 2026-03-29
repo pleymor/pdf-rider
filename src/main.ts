@@ -1,6 +1,5 @@
-import { PdfViewer } from "./pdf-viewer";
+import { PdfViewer, PdfPageView } from "./pdf-viewer";
 import { Toolbar } from "./toolbar";
-import { CanvasOverlay } from "./canvas-overlay";
 import { CompressModal } from "./compress-modal";
 import { SignatureModal } from "./signature-modal";
 import { SettingsModal } from "./settings";
@@ -24,7 +23,6 @@ import {
   readAnnotations,
   getStartupArgs,
   printPages,
-  openUrl,
 } from "./tauri-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask } from "@tauri-apps/plugin-dialog";
@@ -46,32 +44,101 @@ function snapZoom(current: number, dir: 1 | -1): number {
 const appWindow = getCurrentWindow();
 let unlistenClose: (() => void) | null = null;
 
-/** Stores user-entered form field values, keyed by full PDF field name. */
 const formValues = new Map<string, string>();
 
 let filePath: string | null = null;
 let outputPath: string | null = null;
-/** Path to the display version of the PDF (annotation streams stripped).
- *  null when the current file has no burned annotations. */
 let displayFilePath: string | null = null;
 let isDirty = false;
-let pendingSignature: string | null = null; // base64 PNG while in placing mode
+let pendingSignature: string | null = null;
 let editingTextAnn:  TextAnnotation | null = null;
 let editingShapeAnn: RectAnnotation | CircleAnnotation | null = null;
 
 // ── Instances ─────────────────────────────────────────────────────────────────
 
 const viewer = new PdfViewer();
-const store = new AnnotationStore();
+const store  = new AnnotationStore();
 const toolState = defaultToolState();
-const toolbar = new Toolbar();
-const overlay = new CanvasOverlay(toolState);
-const history = new AnnotationHistory();
-const compressModal = new CompressModal();
-const sigModal = new SignatureModal();
-const settingsModal = new SettingsModal();
+const toolbar   = new Toolbar();
+const history   = new AnnotationHistory();
+const compressModal  = new CompressModal();
+const sigModal       = new SignatureModal();
+const settingsModal  = new SettingsModal();
 
-// Apply initial translations, then re-apply on language change
+function onFormChange(name: string, val: string): void {
+  formValues.set(name, val);
+  setDirty(true);
+}
+
+viewer.setup(toolState, store, formValues, onFormChange);
+
+// ── Per-page overlay event wiring ─────────────────────────────────────────────
+
+function wirePageOverlay(pv: PdfPageView): void {
+  const ov = pv.overlay;
+
+  ov.onAnnotationCreated((ann: Annotation) => {
+    history.push(store.getAll());
+    store.add(ann);
+    setDirty(true);
+    toolbar.clearActiveTool();
+  });
+
+  ov.onBeforeModify(() => history.push(store.getAll()));
+
+  ov.onAnnotationMoved(() => setDirty(true));
+
+  ov.onAnnotationRemoved((ann: Annotation) => {
+    store.removeRef(ann);
+    setDirty(true);
+  });
+
+  ov.onAnnotationReordered((ann: Annotation, dir) => {
+    if (dir === "front") store.bringToFront(ann);
+    else store.sendToBack(ann);
+    setDirty(true);
+  });
+
+  ov.onTextAnnotationSelected((ann: TextAnnotation | null) => {
+    editingTextAnn = ann;
+    if (ann) {
+      editingShapeAnn = null;
+      toolbar.showTextStyles(ann);
+      toolbar.hideShapeStyles();
+    } else if (ov.currentTool !== "text") {
+      toolbar.hideTextStyles();
+    }
+  });
+
+  ov.onShapeAnnotationSelected((ann: RectAnnotation | CircleAnnotation | null) => {
+    editingShapeAnn = ann;
+    if (ann) {
+      editingTextAnn = null;
+      toolbar.showShapeStyles(ann);
+      toolbar.hideTextStyles();
+    } else if (ov.currentTool !== "rect" && ov.currentTool !== "circle") {
+      toolbar.hideShapeStyles();
+    }
+  });
+}
+
+viewer.onLayoutChanged((pageViews) => {
+  for (const pv of pageViews) {
+    wirePageOverlay(pv);
+    pv.overlay.setTool(toolState.tool);
+    pv.overlay.setStyle(toolState);
+  }
+});
+
+// ── Focused-page tracking → toolbar page indicator ────────────────────────────
+
+document.getElementById("viewer-scroll")!.addEventListener("focused-page-changed", (e: Event) => {
+  const { page } = (e as CustomEvent<{ page: number }>).detail;
+  toolbar.updatePageInfo(page, viewer.pageCount);
+});
+
+// ── Translations ──────────────────────────────────────────────────────────────
+
 {
   const t = getTranslations(settingsModal.getSettings().language);
   toolbar.applyTranslations(t);
@@ -85,15 +152,11 @@ settingsModal.onChange(s => {
   applyTranslationsToDOM(t);
 });
 
-// Hide viewer until a PDF is loaded
-document.getElementById("viewer-container")!.style.display = "none";
-
 // ── Startup handling ──────────────────────────────────────────────────────────
 
 (async () => {
   try {
     const startup = await getStartupArgs();
-
     if (startup.filePath) {
       if (startup.shouldPrint) {
         document.getElementById("toolbar-container")!.style.display = "none";
@@ -121,26 +184,16 @@ function showToast(msg: string, isError = false): void {
 
 function setDirty(val: boolean): void {
   isDirty = val;
-  if (val) {
-    void registerCloseGuard();
-  } else {
-    unregisterCloseGuard();
-  }
+  if (val) { void registerCloseGuard(); }
+  else      { unregisterCloseGuard(); }
 }
 
 async function registerCloseGuard(): Promise<void> {
   if (unlistenClose) return;
   unlistenClose = await appWindow.onCloseRequested(async (event) => {
     event.preventDefault();
-    const ok = await ask("Close without saving?", {
-      title: "Unsaved changes",
-      kind: "warning",
-    });
-    if (ok) {
-      unlistenClose?.();
-      unlistenClose = null;
-      await appWindow.destroy();
-    }
+    const ok = await ask("Close without saving?", { title: "Unsaved changes", kind: "warning" });
+    if (ok) { unlistenClose?.(); unlistenClose = null; await appWindow.destroy(); }
   });
 }
 
@@ -149,260 +202,45 @@ function unregisterCloseGuard(): void {
   unlistenClose = null;
 }
 
-function onFormChange(name: string, val: string): void {
-  formValues.set(name, val);
-  setDirty(true);
-}
-
-/** Rebuild all overlay layers after any render (zoom, page change, rotate…). */
-async function syncAllLayers(): Promise<void> {
-  overlay.syncToPage(
-    viewer.currentPage,
-    viewer.scale,
-    viewer.pageHeightPt,
-    store.getForPage(viewer.currentPage),
-    viewer.currentViewport ?? undefined
-  );
-  toolbar.updatePageInfo(viewer.currentPage, viewer.pageCount);
-  toolbar.updateZoom(viewer.scale);
-  void updateLinkLayer();
-  await viewer.buildFormLayer(formLayerDiv, formValues, onFormChange);
-}
-
-async function renderCurrentPage(): Promise<void> {
-  await viewer.render();
-  await syncAllLayers();
-}
-
-// Stored link rects (canvas-px coords) for the current page — used for cursor detection
-let pageLinks: { url: string; left: number; top: number; right: number; bottom: number }[] = [];
-
-const linkLayerEl  = document.getElementById("link-layer")!;
-const formLayerDiv = document.getElementById("form-layer") as HTMLElement;
-
-async function updateLinkLayer(): Promise<void> {
-  const canvas = document.getElementById("pdf-canvas") as HTMLCanvasElement;
-  linkLayerEl.innerHTML = "";
-  linkLayerEl.style.width  = canvas.style.width;
-  linkLayerEl.style.height = canvas.style.height;
-  pageLinks = [];
-
-  // Use the inline CSS styles set by buildTextLayer (left, top, fontSize, transform)
-  // to compute URL hit rects.  This avoids getBoundingClientRect() coordinate
-  // ambiguity: span.style.left is already in CSS-px relative to #viewer-container,
-  // which is the same coordinate space as our #link-layer children.
-  const textLayerEl = document.getElementById("text-layer") as HTMLElement;
-  const mc = document.createElement("canvas").getContext("2d")!;
-
-  const measure = (text: string, span: HTMLSpanElement): number => {
-    mc.font = `${span.style.fontSize} ${span.style.fontFamily || "sans-serif"}`;
-    return mc.measureText(text).width;
-  };
-
-  interface SpanEntry {
-    span: HTMLSpanElement;
-    start: number;
-    end: number;
-    text: string;
-    left: number;     // parseFloat(span.style.left)  — CSS px from viewer-container left
-    top: number;      // parseFloat(span.style.top)   — CSS px from viewer-container top
-    fontSize: number; // parseFloat(span.style.fontSize)
-  }
-
-  let combined = "";
-  const entries: SpanEntry[] = [];
-  // Positions in `combined` where WE inserted a line-break space (as opposed to
-  // natural spaces that are part of the PDF text).  Knowing these lets us detect
-  // when a URL match ends at our separator — meaning the URL may continue on the
-  // next line — while still preventing the regex from crossing line boundaries.
-  const lineBreakPos = new Set<number>();
-  let prevTop = NaN;
-  for (const span of textLayerEl.querySelectorAll("span") as NodeListOf<HTMLSpanElement>) {
-    const text = span.textContent ?? "";
-    if (!text) continue;
-    const spanTop = parseFloat(span.style.top) || 0;
-    // Insert a space between spans on different lines so the URL regex cannot
-    // accidentally match across a line boundary into the next line's first word.
-    if (combined.length > 0 && Math.abs(spanTop - prevTop) > 2) {
-      lineBreakPos.add(combined.length);
-      combined += " ";
-    }
-    const start = combined.length;
-    combined += text;
-    entries.push({
-      span,
-      start,
-      end: combined.length,
-      text,
-      left:     parseFloat(span.style.left)     || 0,
-      top:      spanTop,
-      fontSize: parseFloat(span.style.fontSize) || 12,
-    });
-    prevTop = spanTop;
-  }
-
-  // Return one tight rect per span that intersects the URL range.
-  // Multi-line URLs get one rect per line (one per span), NOT a merged union — a union
-  // would span from the wrapped line's left margin to the first line's right edge,
-  // creating an enormous hit area that covers non-URL text.
-  // scaleX is intentionally NOT applied: PDFs sometimes set item.width to the full
-  // paragraph width (to define the link annotation area), which would make scaleX >> 1
-  // and inflate hit rects far beyond the visible URL text.
-  type Rect = { left: number; top: number; right: number; bottom: number };
-  const domRectsForRange = (urlStart: number, urlEnd: number): Rect[] => {
-    const rects: Rect[] = [];
-    for (const e of entries) {
-      if (e.end <= urlStart || e.start >= urlEnd) continue;
-      const urlL = Math.max(e.start, urlStart) - e.start;
-      const urlR = Math.min(e.end,   urlEnd)   - e.start;
-      const clipL = e.left + measure(e.text.slice(0, urlL), e.span);
-      const clipR = e.left + measure(e.text.slice(0, urlR), e.span);
-      if (clipR > clipL) {
-        rects.push({ left: clipL, top: e.top, right: clipR, bottom: e.top + e.fontSize });
-      }
-    }
-    return rects;
-  };
-
-  // Scan visible text for URLs; group rects per URL.
-  // Store startPos so we can look for continuation spans after a line-break space.
-  const urlRe = /https?:\/\/[^\s)\]>"]+/g;
-  let m: RegExpExecArray | null;
-  type DomEntry = { startPos: number; rects: Rect[] };
-  const domLinks = new Map<string, DomEntry>();
-  while ((m = urlRe.exec(combined)) !== null) {
-    const urlEnd = m.index + m[0].length;
-    const rects = domRectsForRange(m.index, urlEnd);
-    if (rects.length > 0) {
-      if (!domLinks.has(m[0])) domLinks.set(m[0], { startPos: m.index, rects });
-      else domLinks.get(m[0])!.rects.push(...rects);
-    }
-
-    // If the URL ends exactly at one of our injected line-break spaces, the URL
-    // may wrap onto the next line.  Check the immediately-following span: if its
-    // text looks like a URL fragment (no whitespace, contains a URL-specific char
-    // like . / - _ ? # = &, and is reasonably short), treat it as a continuation.
-    if (!lineBreakPos.has(urlEnd)) continue;
-    for (const e of entries) {
-      if (e.start < urlEnd + 1) continue;
-      if (e.start > urlEnd + 2) break;
-      // Extract leading URL characters from the span text
-      const fragMatch = /^[^\s)\]>"]+/.exec(e.text);
-      if (!fragMatch) break;
-      const frag = fragMatch[0];
-      // Must be short (URL remainders) and contain at least one URL-special char
-      // to rule out plain words that happen to follow the URL on the next line.
-      if (frag.length >= 2 && frag.length <= 40 && /[./\-_?#=&%]/.test(frag)) {
-        const fullUrl = m[0] + frag;
-        if (!domLinks.has(fullUrl)) {
-          const contRects = domRectsForRange(e.start, e.start + frag.length);
-          domLinks.set(fullUrl, {
-            startPos: m.index,
-            rects: [...(rects.length > 0 ? rects : []), ...contRects],
-          });
-        }
-      }
-      break;
-    }
-  }
-
-  // Merge with formal PDF link annotations.
-  // DOM-found rects take priority (one <a> per line segment).
-  // Annotation rect is fallback for image/button links with no visible URL text.
-  const annotations = await viewer.getPageLinkAnnotations();
-  const addedUrls = new Set<string>();
-
-  const addLink = (url: string, rects: Rect[]) => {
-    addedUrls.add(url);
-    for (const r of rects) pageLinks.push({ url, ...r });
-  };
-
-  for (const { url, rect } of annotations) {
-    if (addedUrls.has(url)) continue;
-
-    // Find best match in domLinks (exact first, then longest common prefix)
-    let bestDomUrl = "";
-    let bestEntry: DomEntry | undefined;
-    for (const [domUrl, entry] of domLinks) {
-      if (domUrl === url) { bestDomUrl = domUrl; bestEntry = entry; break; }
-      const n = Math.min(domUrl.length, url.length);
-      if (n >= 10 && domUrl.slice(0, n) === url.slice(0, n) && domUrl.length > bestDomUrl.length) {
-        bestDomUrl = domUrl;
-        bestEntry = entry;
-      }
-    }
-
-    if (bestEntry) {
-      const allRects = [...bestEntry.rects];
-
-      // Partial match: a line-break space cut the URL before it was fully matched.
-      // Check whether the span immediately after the space is a clean URL continuation
-      // (i.e. the span is almost entirely the remaining URL fragment, not a long line
-      // that merely starts with the same chars).  This recovers the second-line hit rect
-      // for multi-line URLs while avoiding false extensions into unrelated next-line text.
-      if (bestDomUrl.length < url.length) {
-        const remainder = url.slice(bestDomUrl.length);
-        const matchEnd = bestEntry.startPos + bestDomUrl.length;
-        for (const e of entries) {
-          if (e.start < matchEnd + 1) continue; // before the space
-          if (e.start > matchEnd + 2) break;    // too far ahead
-          // Entry starts right after the injected space separator
-          const remLen = Math.min(remainder.length, e.text.length);
-          if (
-            remLen >= 4 &&
-            e.text.slice(0, remLen) === remainder.slice(0, remLen) &&
-            e.text.length <= remLen + 2  // span is almost entirely the URL remainder
-          ) {
-            const clipR = e.left + measure(e.text.slice(0, remLen), e.span);
-            if (clipR > e.left) {
-              allRects.push({ left: e.left, top: e.top, right: clipR, bottom: e.top + e.fontSize });
-            }
-          }
-          break;
-        }
-      }
-
-      addLink(url, allRects);
-    } else {
-      const [x1, y1, x2, y2] = rect;
-      addLink(url, [{ left: Math.min(x1, x2), top: Math.min(y1, y2), right: Math.max(x1, x2), bottom: Math.max(y1, y2) }]);
-    }
-  }
-
-  // Add DOM-discovered URLs not covered by a formal annotation
-  for (const [url, { rects }] of domLinks) {
-    if (!addedUrls.has(url)) addLink(url, rects);
-  }
-
-  // Render one <a> per line segment
-  for (const link of pageLinks) {
-    const a = document.createElement("a");
-    a.style.cssText = [
-      `left:${link.left}px`,
-      `top:${link.top}px`,
-      `width:${link.right - link.left}px`,
-      `height:${link.bottom - link.top}px`,
-    ].join(";");
-    a.addEventListener("click", (e) => {
-      e.preventDefault();
-      void openUrl(link.url);
-    });
-    linkLayerEl.appendChild(a);
+/** Re-sync annotation overlays for all currently-rendered pages. */
+function syncAllPageOverlays(): void {
+  for (const pv of viewer.pageViews) {
+    if (!pv.rendered || !pv.viewport) continue;
+    pv.overlay.syncToPage(
+      pv.pageNum,
+      viewer.scale,
+      pv.viewport.height / viewer.scale,
+      store.getForPage(pv.pageNum),
+      pv.viewport
+    );
   }
 }
+
+async function confirmUnsaved(): Promise<boolean> {
+  if (!isDirty) return true;
+  return ask("Discard unsaved changes and continue?", { title: "Unsaved changes", kind: "warning" });
+}
+
+// ── Load / Save ───────────────────────────────────────────────────────────────
 
 async function promptPassword(fp: string): Promise<void> {
   const pw = window.prompt("This PDF is password-protected. Enter password:");
-  if (pw === null) return; // cancelled
+  if (pw === null) return;
   try {
-    await viewer.loadWithPassword(fp, pw);
     store.clear();
+    formValues.clear();
+    const saved = await readAnnotations(fp);
+    for (const ann of saved) store.add(ann);
+
+    await viewer.loadWithPassword(fp, pw);
     filePath = fp;
     outputPath = null;
+    displayFilePath = null;
+    history.clear();
     setDirty(false);
     toolbar.setLoaded(true);
-    document.getElementById("viewer-container")!.style.display = "";
-    await renderCurrentPage();
+    toolbar.updatePageInfo(1, viewer.pageCount);
+    toolbar.updateZoom(viewer.scale);
   } catch {
     showToast("Wrong password or could not open file.", true);
   }
@@ -410,33 +248,33 @@ async function promptPassword(fp: string): Promise<void> {
 
 async function loadPdf(path: string): Promise<void> {
   try {
-    await viewer.load(path);
     store.clear();
     formValues.clear();
-    filePath = path;
-    outputPath = null;
-    displayFilePath = null;
 
-    // Restore any previously saved annotations from the PDF catalog
+    // Read annotations BEFORE viewer.load() so IntersectionObserver finds them populated
     const saved = await readAnnotations(path);
-    for (const ann of saved) {
-      store.add(ann);
-    }
+    for (const ann of saved) store.add(ann);
 
-    // If there are burned annotations, strip them from the display copy so
-    // pdf.js renders a clean page — the overlay owns all annotation drawing.
+    let loadPath = path;
     if (saved.length > 0) {
       const dp = path + ".display.pdf";
       await stripAnnotationStreams(path, dp);
       displayFilePath = dp;
-      await viewer.load(dp);
+      loadPath = dp;
+    } else {
+      displayFilePath = null;
     }
+
+    filePath = path;
+    outputPath = null;
+
+    await viewer.load(loadPath);
 
     history.clear();
     setDirty(false);
     toolbar.setLoaded(true);
-    document.getElementById("viewer-container")!.style.display = "";
-    await renderCurrentPage();
+    toolbar.updatePageInfo(1, viewer.pageCount);
+    toolbar.updateZoom(viewer.scale);
   } catch (err: unknown) {
     const msg = String(err);
     if (msg.includes("PasswordException") || msg.includes("password")) {
@@ -455,7 +293,6 @@ async function openFile(): Promise<void> {
 
 async function saveFile(forceDialog: boolean): Promise<void> {
   if (!filePath) return;
-
   let target: string;
   if (forceDialog) {
     const picked = await savePdfDialog(filePath);
@@ -463,15 +300,10 @@ async function saveFile(forceDialog: boolean): Promise<void> {
     outputPath = picked;
     target = picked;
   } else {
-    // Save: write directly to the last save path, or overwrite the source file
     target = outputPath ?? filePath;
   }
-
   try {
     const fv: FormFieldValue[] = [...formValues.entries()].map(([name, value]) => ({ name, value }));
-    // Save from the display file (clean, no burns) or the original if no display exists.
-    // The display version is a valid base for all saves since it contains the full page
-    // content — only the annotation streams were emptied.
     await saveAnnotatedPdf(displayFilePath ?? filePath, target, store.getAll(), viewer.rotation, fv);
     filePath = target;
     setDirty(false);
@@ -481,23 +313,14 @@ async function saveFile(forceDialog: boolean): Promise<void> {
   }
 }
 
-async function confirmUnsaved(): Promise<boolean> {
-  if (!isDirty) return true;
-  return ask("Discard unsaved changes and continue?", {
-    title: "Unsaved changes",
-    kind: "warning",
-  });
-}
-
 // ── Compress handler ──────────────────────────────────────────────────────────
 
 compressModal.onConfirm(async (level) => {
   if (!filePath) return;
-  const outputPath = await savePdfDialog(filePath);
-  if (!outputPath) return;
-
+  const out = await savePdfDialog(filePath);
+  if (!out) return;
   try {
-    const result = await compressPdf(filePath, outputPath, level);
+    const result = await compressPdf(filePath, out, level);
     const fromMB = (result.originalBytes   / 1_048_576).toFixed(1);
     const toMB   = (result.compressedBytes / 1_048_576).toFixed(1);
     const pct    = result.originalBytes > 0
@@ -533,7 +356,6 @@ toolbar.on(async (e) => {
       if (viewer.isLoaded()) {
         await viewer.rotate();
         setDirty(true);
-        await syncAllLayers();
       }
       break;
 
@@ -541,14 +363,14 @@ toolbar.on(async (e) => {
     case "zoom-out":
       if (viewer.isLoaded()) {
         await viewer.setScale(snapZoom(viewer.scale, e.type === "zoom-in" ? 1 : -1));
-        await syncAllLayers();
+        toolbar.updateZoom(viewer.scale);
       }
       break;
 
     case "zoom-set":
       if (viewer.isLoaded()) {
         await viewer.setScale(e.scale);
-        await syncAllLayers();
+        toolbar.updateZoom(viewer.scale);
       }
       break;
 
@@ -556,7 +378,7 @@ toolbar.on(async (e) => {
       if (viewer.isLoaded()) {
         const scroll = document.getElementById("viewer-scroll")!;
         await viewer.setScale((scroll.clientWidth - 40) / viewer.pageWidthPt);
-        await syncAllLayers();
+        toolbar.updateZoom(viewer.scale);
       }
       break;
 
@@ -564,24 +386,25 @@ toolbar.on(async (e) => {
       if (viewer.isLoaded()) {
         const scroll = document.getElementById("viewer-scroll")!;
         await viewer.setScale((scroll.clientHeight - 40) / viewer.pageHeightPt);
-        await syncAllLayers();
+        toolbar.updateZoom(viewer.scale);
       }
       break;
 
     case "page-prev":
-      if (viewer.isLoaded()) { await viewer.prevPage();  await syncAllLayers(); }
+      if (viewer.isLoaded()) viewer.goToPage(viewer.currentPage - 1);
       break;
 
     case "page-next":
-      if (viewer.isLoaded()) { await viewer.nextPage();  await syncAllLayers(); }
+      if (viewer.isLoaded()) viewer.goToPage(viewer.currentPage + 1);
       break;
 
     case "page-goto":
-      if (viewer.isLoaded()) { await viewer.goToPage(e.page); await syncAllLayers(); }
+      if (viewer.isLoaded()) viewer.goToPage(e.page);
       break;
 
     case "tool-change":
-      overlay.setTool(e.tool);
+      toolState.tool = e.tool;
+      for (const pv of viewer.pageViews) pv.overlay.setTool(e.tool);
       editingTextAnn  = null;
       editingShapeAnn = null;
       if (e.tool === "text") {
@@ -597,13 +420,15 @@ toolbar.on(async (e) => {
       break;
 
     case "style-change":
-      Object.assign(toolState, e.style); // always persist for next annotation
-      overlay.setStyle(toolState);       // always sync overlay draw style
+      Object.assign(toolState, e.style);
+      for (const pv of viewer.pageViews) pv.overlay.setStyle(toolState);
       if (editingTextAnn) {
-        overlay.applyTextAnnotationStyle(editingTextAnn, e.style);
+        const pv = viewer.pageViews.find(p => p.pageNum === editingTextAnn!.page);
+        pv?.overlay.applyTextAnnotationStyle(editingTextAnn, e.style);
         setDirty(true);
       } else if (editingShapeAnn) {
-        overlay.applyShapeAnnotationStyle(editingShapeAnn, e.style.color, e.style.strokeWidth);
+        const pv = viewer.pageViews.find(p => p.pageNum === editingShapeAnn!.page);
+        pv?.overlay.applyShapeAnnotationStyle(editingShapeAnn, e.style.color, e.style.strokeWidth);
         setDirty(true);
       }
       break;
@@ -613,7 +438,8 @@ toolbar.on(async (e) => {
       if (ann) {
         if (e.dir === "front") store.bringToFront(ann);
         else store.sendToBack(ann);
-        overlay.reorderTextAnnotation(ann, e.dir);
+        const pv = viewer.pageViews.find(p => p.pageNum === ann.page);
+        pv?.overlay.reorderTextAnnotation(ann, e.dir);
         setDirty(true);
       }
       break;
@@ -632,7 +458,6 @@ toolbar.on(async (e) => {
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
 document.addEventListener("keydown", async (e) => {
-  // Don't fire while typing in any input or contenteditable
   const tag = (document.activeElement as HTMLElement)?.tagName ?? "";
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" ||
       (document.activeElement as HTMLElement)?.isContentEditable) return;
@@ -640,128 +465,65 @@ document.addEventListener("keydown", async (e) => {
   const ctrl  = e.ctrlKey || e.metaKey;
   const shift = e.shiftKey;
 
-  // Ctrl+Z — Undo
   if (ctrl && !shift && e.key === "z") {
     e.preventDefault();
     const prev = history.undo(store.getAll());
-    if (prev) { store.replaceAll(prev); await syncAllLayers(); setDirty(true); }
+    if (prev) { store.replaceAll(prev); syncAllPageOverlays(); setDirty(true); }
     return;
   }
-  // Ctrl+Y or Ctrl+Shift+Z — Redo
   if (ctrl && (e.key === "y" || (shift && e.key === "Z"))) {
     e.preventDefault();
     const next = history.redo(store.getAll());
-    if (next) { store.replaceAll(next); await syncAllLayers(); setDirty(true); }
+    if (next) { store.replaceAll(next); syncAllPageOverlays(); setDirty(true); }
     return;
   }
-  // Ctrl+O — Open
   if (ctrl && !shift && e.key === "o") {
     e.preventDefault();
     if (await confirmUnsaved()) await openFile();
     return;
   }
-  // Ctrl+Shift+S — Save As  (must be checked before plain Ctrl+S)
   if (ctrl && shift && e.key === "S") {
     e.preventDefault();
     await saveFile(true);
     return;
   }
-  // Ctrl+S — Save
   if (ctrl && !shift && e.key === "s") {
     e.preventDefault();
     await saveFile(false);
     return;
   }
-  // Ctrl+P — Print
   if (ctrl && !shift && e.key === "p") {
     e.preventDefault();
     window.print();
     return;
   }
-  // Ctrl+Shift+E — Compress
   if (ctrl && shift && e.key === "E") {
     e.preventDefault();
     if (filePath) compressModal.open();
     return;
   }
-  // Ctrl++ / Ctrl+= — Zoom in
   if (ctrl && (e.key === "+" || e.key === "=")) {
     e.preventDefault();
-    if (viewer.isLoaded()) { await viewer.setScale(snapZoom(viewer.scale, 1));  await syncAllLayers(); }
+    if (viewer.isLoaded()) { await viewer.setScale(snapZoom(viewer.scale, 1));  toolbar.updateZoom(viewer.scale); }
     return;
   }
-  // Ctrl+- — Zoom out
   if (ctrl && e.key === "-") {
     e.preventDefault();
-    if (viewer.isLoaded()) { await viewer.setScale(snapZoom(viewer.scale, -1)); await syncAllLayers(); }
+    if (viewer.isLoaded()) { await viewer.setScale(snapZoom(viewer.scale, -1)); toolbar.updateZoom(viewer.scale); }
     return;
   }
-  // Ctrl+0 — Reset zoom to 100%
   if (ctrl && e.key === "0") {
     e.preventDefault();
-    if (viewer.isLoaded()) { await viewer.setScale(1.0); await syncAllLayers(); }
+    if (viewer.isLoaded()) { await viewer.setScale(1.0); toolbar.updateZoom(viewer.scale); }
     return;
   }
-  // ArrowRight / PageDown — Next page
   if (!ctrl && (e.key === "ArrowRight" || e.key === "PageDown")) {
-    if (viewer.isLoaded()) { e.preventDefault(); await viewer.nextPage();  await syncAllLayers(); }
+    if (viewer.isLoaded()) { e.preventDefault(); viewer.goToPage(viewer.currentPage + 1); }
     return;
   }
-  // ArrowLeft / PageUp — Previous page
   if (!ctrl && (e.key === "ArrowLeft" || e.key === "PageUp")) {
-    if (viewer.isLoaded()) { e.preventDefault(); await viewer.prevPage();  await syncAllLayers(); }
+    if (viewer.isLoaded()) { e.preventDefault(); viewer.goToPage(viewer.currentPage - 1); }
     return;
-  }
-});
-
-// ── Annotation events ─────────────────────────────────────────────────────────
-
-overlay.onAnnotationCreated((ann: Annotation) => {
-  history.push(store.getAll()); // snapshot before add (store doesn't yet contain ann)
-  store.add(ann);
-  setDirty(true);
-  toolbar.clearActiveTool();
-});
-
-overlay.onBeforeModify(() => {
-  history.push(store.getAll());
-});
-
-overlay.onAnnotationMoved(() => {
-  // Position mutated in place on the shared reference — just mark dirty
-  setDirty(true);
-});
-
-overlay.onAnnotationRemoved((ann: Annotation) => {
-  store.removeRef(ann);
-  setDirty(true);
-});
-
-overlay.onAnnotationReordered((ann: Annotation, dir) => {
-  if (dir === "front") store.bringToFront(ann);
-  else store.sendToBack(ann);
-  setDirty(true);
-});
-
-overlay.onTextAnnotationSelected((ann: TextAnnotation | null) => {
-  editingTextAnn = ann;
-  if (ann) {
-    editingShapeAnn = null; // mutual exclusion: deselect shape
-    toolbar.showTextStyles(ann);
-    toolbar.hideShapeStyles();
-  } else if (overlay.currentTool !== "text") {
-    toolbar.hideTextStyles();
-  }
-});
-
-overlay.onShapeAnnotationSelected((ann: RectAnnotation | CircleAnnotation | null) => {
-  editingShapeAnn = ann;
-  if (ann) {
-    editingTextAnn = null; // mutual exclusion: deselect text
-    toolbar.showShapeStyles(ann);
-    toolbar.hideTextStyles();
-  } else if (overlay.currentTool !== "rect" && overlay.currentTool !== "circle") {
-    toolbar.hideShapeStyles();
   }
 });
 
@@ -769,33 +531,37 @@ overlay.onShapeAnnotationSelected((ann: RectAnnotation | CircleAnnotation | null
 
 sigModal.onSignatureReady((imageData: string) => {
   pendingSignature = imageData;
-  const container = document.getElementById("viewer-container")!;
-  container.style.cursor = "crosshair";
+  document.getElementById("viewer-scroll")!.style.cursor = "crosshair";
   showToast("Click on the page to place your signature. Press Esc to cancel.");
 });
 
-// Click on viewer to place signature
-document.getElementById("viewer-container")!.addEventListener("click", (e: MouseEvent) => {
+// Click on a page wrapper to place signature
+document.getElementById("viewer-scroll")!.addEventListener("click", (e: MouseEvent) => {
   if (!pendingSignature) return;
+  const wrapper = (e.target as HTMLElement).closest(".page-wrapper") as HTMLElement | null;
+  if (!wrapper) return;
 
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const pageNum = parseInt(wrapper.dataset.page ?? "0");
+  const pv = viewer.pageViews.find(p => p.pageNum === pageNum);
+  if (!pv) return;
+
+  const rect = wrapper.getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
 
-  // Default signature size: 150 × 60 PDF points
-  history.push(store.getAll()); // snapshot before add
-  const ann = overlay.placeSignature(x, y, pendingSignature, 150, 60);
+  history.push(store.getAll());
+  const ann = pv.overlay.placeSignature(x, y, pendingSignature, 150, 60);
   store.add(ann);
   setDirty(true);
 
   pendingSignature = null;
-  (e.currentTarget as HTMLElement).style.cursor = "";
+  document.getElementById("viewer-scroll")!.style.cursor = "";
   toolbar.clearActiveTool();
 });
 
 // ── Context menu ──────────────────────────────────────────────────────────────
 
-const ctxMenu = document.getElementById("ctx-menu")!;
+const ctxMenu    = document.getElementById("ctx-menu")!;
 const ctxCopyBtn = document.getElementById("ctx-copy") as HTMLButtonElement;
 
 document.addEventListener("contextmenu", (e: MouseEvent) => {
@@ -803,7 +569,7 @@ document.addEventListener("contextmenu", (e: MouseEvent) => {
   const sel = window.getSelection()?.toString() ?? "";
   ctxCopyBtn.disabled = sel.length === 0;
   ctxMenu.style.left = `${e.clientX}px`;
-  ctxMenu.style.top = `${e.clientY}px`;
+  ctxMenu.style.top  = `${e.clientY}px`;
   ctxMenu.classList.remove("hidden");
 });
 
@@ -813,30 +579,28 @@ ctxCopyBtn.addEventListener("click", async () => {
   ctxMenu.classList.add("hidden");
 });
 
-// Close context menu on any click outside it
 document.addEventListener("mousedown", (e: MouseEvent) => {
-  if (!ctxMenu.contains(e.target as Node)) {
-    ctxMenu.classList.add("hidden");
-  }
+  if (!ctxMenu.contains(e.target as Node)) ctxMenu.classList.add("hidden");
 });
 
-// Escape cancels pending signature or deselects active drawing tool
-// Ctrl++/- zooms in/out
+// ── Escape / zoom keyboard shortcuts (window-level) ──────────────────────────
+
 window.addEventListener("keydown", async (e: KeyboardEvent) => {
   if (e.ctrlKey && (e.key === "+" || e.key === "=" || e.key === "-")) {
     if (!viewer.isLoaded()) return;
     e.preventDefault();
     await viewer.setScale(snapZoom(viewer.scale, e.key === "-" ? -1 : 1));
-    await syncAllLayers();
+    toolbar.updateZoom(viewer.scale);
     return;
   }
   if (e.key !== "Escape") return;
   if (pendingSignature) {
     pendingSignature = null;
-    document.getElementById("viewer-container")!.style.cursor = "";
+    document.getElementById("viewer-scroll")!.style.cursor = "";
     showToast("Signature placement cancelled.");
-  } else if (overlay.currentTool !== "select") {
-    overlay.setTool("select");
+  } else if (toolState.tool !== "select") {
+    toolState.tool = "select";
+    for (const pv of viewer.pageViews) pv.overlay.setTool("select");
     toolbar.clearActiveTool();
     editingTextAnn  = null;
     editingShapeAnn = null;
@@ -845,12 +609,13 @@ window.addEventListener("keydown", async (e: KeyboardEvent) => {
   }
 });
 
-// Ctrl+wheel zooms the document
+// ── Ctrl+wheel zoom ───────────────────────────────────────────────────────────
+
 document.getElementById("viewer-scroll")!.addEventListener("wheel", async (e: WheelEvent) => {
   if (!e.ctrlKey || !viewer.isLoaded()) return;
   e.preventDefault();
   await viewer.setScale(snapZoom(viewer.scale, e.deltaY < 0 ? 1 : -1));
-  await syncAllLayers();
+  toolbar.updateZoom(viewer.scale);
 }, { passive: false });
 
 // ── Drag-drop ─────────────────────────────────────────────────────────────────
@@ -864,11 +629,9 @@ document.getElementById("viewer-scroll")!.addEventListener("wheel", async (e: Wh
         document.body.classList.remove("drag-over");
       } else if (event.payload.type === "drop") {
         document.body.classList.remove("drag-over");
-        const pdfPath = event.payload.paths.find((p: string) =>
-          p.toLowerCase().endsWith(".pdf")
-        );
+        const pdfPath = event.payload.paths.find((p: string) => p.toLowerCase().endsWith(".pdf"));
         if (pdfPath) {
-          if (await confirmUnsaved()) loadPdf(pdfPath);
+          if (await confirmUnsaved()) void loadPdf(pdfPath);
         } else if (event.payload.paths.length > 0) {
           showToast("Only PDF files can be opened.", true);
         }
