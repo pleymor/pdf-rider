@@ -182,24 +182,32 @@ input[type="color"].color-picker {
   overflow: auto;
   background: #121212;
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
   padding: 20px;
 }
 
-#viewer-container {
+.page-row {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.page-wrapper {
   position: relative;
-  display: inline-block;
   line-height: 0;
   box-shadow: 0 4px 20px rgba(0,0,0,0.6);
 }
 
-#pdf-canvas {
+.page-canvas {
   display: block;
   background: #fff;
 }
 
-#text-layer {
+.page-text-layer {
   position: absolute;
   top: 0;
   left: 0;
@@ -208,12 +216,12 @@ input[type="color"].color-picker {
 }
 
 /* Highlight colour when text is selected */
-#text-layer ::selection {
+.page-text-layer ::selection {
   background: rgba(0, 120, 255, 0.25);
   color: transparent;
 }
 
-#link-layer {
+.page-link-layer {
   position: absolute;
   top: 0;
   left: 0;
@@ -222,13 +230,13 @@ input[type="color"].color-picker {
   pointer-events: none;
 }
 
-#link-layer a {
+.page-link-layer a {
   position: absolute;
   cursor: pointer;
   pointer-events: auto;
 }
 
-#form-layer {
+.page-form-layer {
   position: absolute;
   top: 0;
   left: 0;
@@ -237,9 +245,9 @@ input[type="color"].color-picker {
   pointer-events: none;
 }
 
-#form-layer input,
-#form-layer textarea,
-#form-layer select {
+.page-form-layer input,
+.page-form-layer textarea,
+.page-form-layer select {
   background: rgba(173, 214, 255, 0.18);
   border: none;
   border-radius: 1px;
@@ -251,26 +259,26 @@ input[type="color"].color-picker {
   padding: 1px 3px;
 }
 
-#form-layer input:focus,
-#form-layer textarea:focus,
-#form-layer select:focus {
+.page-form-layer input:focus,
+.page-form-layer textarea:focus,
+.page-form-layer select:focus {
   background: transparent;
   box-shadow: none;
 }
 
-#form-layer input[type="checkbox"],
-#form-layer input[type="radio"] {
+.page-form-layer input[type="checkbox"],
+.page-form-layer input[type="radio"] {
   padding: 0;
   cursor: pointer;
 }
 
-#form-layer input[type="checkbox"]:focus,
-#form-layer input[type="radio"]:focus {
+.page-form-layer input[type="checkbox"]:focus,
+.page-form-layer input[type="radio"]:focus {
   box-shadow: 0 0 0 2px rgba(100, 170, 255, 0.7);
   outline: none;
 }
 
-#annotation-canvas {
+.page-annotation-canvas {
   position: absolute;
   top: 0;
   left: 0;
@@ -512,10 +520,12 @@ input[type="color"].color-picker {
 
   #viewer-scroll {
     padding: 0;
-    justify-content: flex-start;
+    gap: 0;
+    align-items: flex-start;
   }
 
-  #viewer-container {
+  .page-wrapper {
     box-shadow: none;
+    background: #fff;
   }
 }

@@ -40,6 +40,7 @@ const MIN_SIZE_PT = 10; // minimum annotation dimension in PDF pts
 
 export class CanvasOverlay {
   private canvas: HTMLCanvasElement;
+  private container: HTMLElement;
   private ctx: CanvasRenderingContext2D;
 
   private style: ActiveToolState;
@@ -91,9 +92,10 @@ export class CanvasOverlay {
   // ── Before-modify callbacks ──────────────────────────────────────────────────
   private beforeModifyHandlers: (() => void)[] = [];
 
-  constructor(initialStyle: ActiveToolState) {
+  constructor(canvas: HTMLCanvasElement, container: HTMLElement, initialStyle: ActiveToolState) {
     this.style = { ...initialStyle };
-    this.canvas = document.getElementById("annotation-canvas") as HTMLCanvasElement;
+    this.canvas = canvas;
+    this.container = container;
     this.ctx = this.canvas.getContext("2d")!;
 
     this.canvas.addEventListener("mousedown",    this.onMouseDown);
@@ -105,13 +107,11 @@ export class CanvasOverlay {
     window.addEventListener("keydown", this.onKeyDown);
 
     // In select mode the canvas has pointer-events:none by default so text
-    // selection works.  We listen on the viewer-container (always receives
+    // selection works.  We listen on the container (always receives
     // events) to detect when the cursor is over an annotation and temporarily
     // flip pointer-events:auto so the canvas can handle clicks/drags.
-    document.getElementById("viewer-container")
-      ?.addEventListener("mousemove", this.onContainerMouseMove);
-    document.getElementById("viewer-container")
-      ?.addEventListener("mousedown", this.onContainerMouseDown);
+    container.addEventListener("mousemove", this.onContainerMouseMove);
+    container.addEventListener("mousedown", this.onContainerMouseDown);
 
     this.applyPointerEvents(this.activeTool);
   }
@@ -223,12 +223,6 @@ export class CanvasOverlay {
     this.dragging = false;
     this.resizing = false;
     this.dragTarget = null;
-
-    const pdfCanvas = document.getElementById("pdf-canvas") as HTMLCanvasElement;
-    this.canvas.width  = pdfCanvas.width;
-    this.canvas.height = pdfCanvas.height;
-    this.canvas.style.width  = pdfCanvas.style.width;
-    this.canvas.style.height = pdfCanvas.style.height;
 
     this.committed = [...annotations];
     this.redrawCommitted();
@@ -748,7 +742,7 @@ export class CanvasOverlay {
    * @param widthPx drawn width in canvas-px; 0 = auto (default size)
    */
   private openTextInput(left: number, top: number, widthPx: number): void {
-    const container = document.getElementById("viewer-container")!;
+    const container = this.container;
     const fontSize  = this.style.fontSize * this.scale;
     const hasWidth  = widthPx > 0;
 
@@ -843,7 +837,7 @@ export class CanvasOverlay {
   }
 
   private handleTextEdit(ann: TextAnnotation): void {
-    const container = document.getElementById("viewer-container")!;
+    const container = this.container;
     const { scale } = this;
     const [canvasX, canvasY] = this.toCanvas(ann.x, ann.y); // baseline
     // boxTop = baseline - 2px padding - fontSize (mirrors openTextInput commit logic)
