@@ -138,24 +138,22 @@ jobs:
           MICROSOFT_STORE_CLIENT_ID: ${{ secrets.MICROSOFT_STORE_CLIENT_ID }}
           MICROSOFT_STORE_CLIENT_SECRET: ${{ secrets.MICROSOFT_STORE_CLIENT_SECRET }}
         run: |
-          # Write config without BOM
+          # Write config.json (no ClientSecret - it goes to Credential Manager)
           $configDir = "$env:LOCALAPPDATA\Microsoft\MSStore.CLI"
           New-Item -ItemType Directory -Path $configDir -Force | Out-Null
           $config = @{
-            TenantId     = $env:MICROSOFT_STORE_TENANT_ID
-            SellerId     = 92945690
-            ClientId     = $env:MICROSOFT_STORE_CLIENT_ID
-            ClientSecret = $env:MICROSOFT_STORE_CLIENT_SECRET
+            TenantId = $env:MICROSOFT_STORE_TENANT_ID
+            SellerId = 92945690
+            ClientId = $env:MICROSOFT_STORE_CLIENT_ID
           } | ConvertTo-Json
           $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
           $configPath = Join-Path $configDir "config.json"
           [System.IO.File]::WriteAllText($configPath, $config, $utf8NoBom)
 
-          # Debug: verify config
-          Write-Host "Config path: $configPath"
-          Write-Host "Config exists: $(Test-Path $configPath)"
-          $content = Get-Content $configPath -Raw
-          Write-Host "Config keys: $(($content | ConvertFrom-Json).PSObject.Properties.Name -join ', ')"
+          # Store ClientSecret in Windows Credential Manager (keyed by ClientId)
+          $clientId = $env:MICROSOFT_STORE_CLIENT_ID
+          $secret = $env:MICROSOFT_STORE_CLIENT_SECRET
+          cmdkey /generic:$clientId /user:$clientId /pass:$secret
 
           # Submit
           $version = "${{ steps.version.outputs.version }}"

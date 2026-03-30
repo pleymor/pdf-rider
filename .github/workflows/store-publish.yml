@@ -51,25 +51,31 @@ jobs:
           Expand-Archive msstore.zip -DestinationPath "$env:LOCALAPPDATA\msstore-cli"
           echo "$env:LOCALAPPDATA\msstore-cli" >> $env:GITHUB_PATH
 
-      - name: Configure Store credentials
+      - name: Configure and submit to Microsoft Store
         shell: pwsh
         env:
           MICROSOFT_STORE_TENANT_ID: ${{ secrets.MICROSOFT_STORE_TENANT_ID }}
           MICROSOFT_STORE_CLIENT_ID: ${{ secrets.MICROSOFT_STORE_CLIENT_ID }}
           MICROSOFT_STORE_CLIENT_SECRET: ${{ secrets.MICROSOFT_STORE_CLIENT_SECRET }}
         run: |
+          # Write config.json (no ClientSecret - it goes to Credential Manager)
           $configDir = "$env:LOCALAPPDATA\Microsoft\MSStore.CLI"
           New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-          @{
-            TenantId     = $env:MICROSOFT_STORE_TENANT_ID
-            SellerId     = 92945690
-            ClientId     = $env:MICROSOFT_STORE_CLIENT_ID
-            ClientSecret = $env:MICROSOFT_STORE_CLIENT_SECRET
-          } | ConvertTo-Json | Set-Content "$configDir\config.json" -Encoding utf8
+          $config = @{
+            TenantId = $env:MICROSOFT_STORE_TENANT_ID
+            SellerId = 92945690
+            ClientId = $env:MICROSOFT_STORE_CLIENT_ID
+          } | ConvertTo-Json
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          $configPath = Join-Path $configDir "config.json"
+          [System.IO.File]::WriteAllText($configPath, $config, $utf8NoBom)
 
-      - name: Submit to Microsoft Store
-        shell: pwsh
-        run: |
+          # Store ClientSecret in Windows Credential Manager (keyed by ClientId)
+          $clientId = $env:MICROSOFT_STORE_CLIENT_ID
+          $secret = $env:MICROSOFT_STORE_CLIENT_SECRET
+          cmdkey /generic:$clientId /user:$clientId /pass:$secret
+
+          # Submit
           $version = "${{ steps.version.outputs.version }}"
           $msixFile = "pdf-rider-${version}-win-x64.msix"
           Write-Host "Submitting $msixFile to Microsoft Store..."
