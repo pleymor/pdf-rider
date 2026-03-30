@@ -105,7 +105,9 @@ foreach ($icon in $iconFiles) {
 Write-Host "Copying manifest..." -ForegroundColor Yellow
 $manifest = Get-Content ".\src-tauri\AppxManifest.xml" -Raw
 $manifest = $manifest -replace 'Version="[^"]*"', "Version=`"$Version`""
-$manifest | Set-Content "$PackageDir\AppxManifest.xml" -Encoding utf8
+# Write without BOM - makeappx requires no BOM
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText("$((Resolve-Path $PackageDir).Path)\AppxManifest.xml", $manifest, $utf8NoBom)
 
 # Step 6: Create MSIX package
 Write-Host "`n=== Creating MSIX package ===" -ForegroundColor Green
