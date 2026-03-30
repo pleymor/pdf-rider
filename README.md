@@ -1,25 +1,25 @@
 <div align="center">
 
-# PDF Reader
+# PDF Rider
 
 **A fast, lightweight, open-source PDF reader for Windows.**
 Read, annotate, sign, fill forms, and compress — all in a single 5.5 MB portable executable. No installer. No subscription. No telemetry.
 
-[![Latest Release](https://img.shields.io/github/v/release/pleymor/pdf-reader?style=flat-square&label=Download)](https://github.com/pleymor/pdf-reader/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/pleymor/pdf-rider?style=flat-square&label=Download)](https://github.com/pleymor/pdf-rider/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust-orange?style=flat-square)](https://www.rust-lang.org/)
 
-![PDF Reader main view](docs/screenshots/main-page.png)
+![PDF Rider main view](docs/screenshots/main-page.png)
 
 </div>
 
 ---
 
-## Why PDF Reader?
+## Why PDF Rider?
 
-Most PDF tools are either bloated desktop applications that take minutes to install and gigabytes of disk space, or cloud-based services that upload your documents to a third-party server. PDF Reader is neither.
+Most PDF tools are either bloated desktop applications that take minutes to install and gigabytes of disk space, or cloud-based services that upload your documents to a third-party server. PDF Rider is neither.
 
-| | PDF Reader | Adobe Acrobat | Online tools |
+| | PDF Rider | Adobe Acrobat | Online tools |
 |---|---|---|---|
 | **Binary size** | 5.5 MB | ~4 GB | — |
 | **Installer required** | No | Yes | No |
@@ -68,14 +68,14 @@ Most PDF tools are either bloated desktop applications that take minutes to inst
 
 ### Windows integration
 - **Set as default PDF handler** directly from the app — no admin rights required
-- **Print** silently from the command line (`pdf-reader-portable.exe --print file.pdf`)
+- **Print** silently from the command line (`pdf-rider-portable.exe --print file.pdf`)
 - Registers both open and print verbs in HKCU
 
 ---
 
 ## Download
 
-**[→ Download the latest release](https://github.com/pleymor/pdf-reader/releases/latest)**
+**[→ Download the latest release](https://github.com/pleymor/pdf-rider/releases/latest)**
 
 Single portable `.exe`, 5.5 MB. Drop it anywhere and run it — no installer, no dependencies.
 
@@ -83,7 +83,7 @@ Single portable `.exe`, 5.5 MB. Drop it anywhere and run it — no installer, no
 
 ## Contributing
 
-PDF Reader is built with **Rust + TypeScript + Tauri v2**. The codebase is intentionally small and straightforward. Contributions are welcome.
+PDF Rider is built with **Rust + TypeScript + Tauri v2**. The codebase is intentionally small and straightforward. Contributions are welcome.
 
 ### Prerequisites
 
@@ -100,8 +100,8 @@ PDF Reader is built with **Rust + TypeScript + Tauri v2**. The codebase is inten
 
 ```bash
 # Clone
-git clone https://github.com/pleymor/pdf-reader.git
-cd pdf-reader
+git clone https://github.com/pleymor/pdf-rider.git
+cd pdf-rider
 
 # Install JS dependencies
 npm install
@@ -111,13 +111,13 @@ npm run tauri dev
 
 # Build a release portable executable
 npm run tauri build
-# Output: src-tauri/target/release/pdf-reader-portable.exe
+# Output: src-tauri/target/release/pdf-rider-portable.exe
 ```
 
 ### Architecture
 
 ```
-pdf-reader/
+pdf-rider/
 ├── src/                        # TypeScript frontend (Vite + PDF.js)
 │   ├── main.ts                 # App entrypoint, event wiring
 │   ├── tauri-bridge.ts         # All invoke() wrappers with types
@@ -181,7 +181,7 @@ Feature branches are numbered sequentially. Pick the next available number from 
 
 ### Good first issues
 
-Check the [open issues](https://github.com/pleymor/pdf-reader/issues) — issues labeled [`good first issue`](https://github.com/pleymor/pdf-reader/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are a great place to start.
+Check the [open issues](https://github.com/pleymor/pdf-rider/issues) — issues labeled [`good first issue`](https://github.com/pleymor/pdf-rider/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are a great place to start.
 
 ---
 

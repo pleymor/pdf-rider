@@ -50,6 +50,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -81,7 +82,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          cp "src-tauri/target/release/pdf-reader-portable.exe" \
+          cp "src-tauri/target/release/pdf-rider-portable.exe" \
              "pdf-rider-portable-${VERSION}-win-x64.exe"
           cp "src-tauri/target/release/bundle/nsis/PDF Rider_${VERSION}_x64-setup.exe" \
              "pdf-rider-${VERSION}-win-x64-setup.exe"

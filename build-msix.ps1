@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 # Configuration
 $AppName = "pdf-rider"
-$ExeName = "pdf-reader-portable"
+$ExeName = "pdf-rider-portable"
 $OutputDir = ".\msix-output"
 $PackageDir = "$OutputDir\package"
 

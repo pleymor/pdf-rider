@@ -1,16 +1,16 @@
 [package]
-name = "pdf-reader"
-version = "0.2.3"
-description = "A simple, lightweight PDF reader with annotations and signing"
+name = "pdf-rider"
+version = "0.2.4"
+description = "A simple, lightweight PDF rider with annotations and signing"
 authors = []
 edition = "2021"
 
 [[bin]]
-name = "pdf-reader-portable"
+name = "pdf-rider-portable"
 path = "src/main.rs"
 
 [lib]
-name = "pdf_reader_lib"
+name = "pdf_rider_lib"
 crate-type = ["rlib"]
 
 [build-dependencies]

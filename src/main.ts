@@ -276,7 +276,7 @@ async function loadPdf(path: string): Promise<void> {
     if (saved.length > 0) {
       const tmp  = await tempDir();
       const base = await basename(path);
-      const dp   = `${tmp}pdf-reader-display-${base}`;
+      const dp   = `${tmp}pdf-rider-display-${base}`;
       await stripAnnotationStreams(path, dp);
       displayFilePath = dp;
       loadPath = dp;

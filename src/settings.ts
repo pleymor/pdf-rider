@@ -15,7 +15,7 @@ export interface AppSettings {
 
 // ── Persistence ───────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = "pdf-reader-settings";
+const STORAGE_KEY = "pdf-rider-settings";
 const DEFAULTS: AppSettings = { language: "fr" };
 
 export function loadSettings(): AppSettings {
