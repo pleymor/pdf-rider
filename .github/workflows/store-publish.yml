@@ -1,0 +1,68 @@
+name: Publish to Microsoft Store
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.2.4)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${{ github.event.release.tag_name }}"
+          fi
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Download MSIX from release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          gh release download "$TAG" \
+            --repo "${{ github.repository }}" \
+            --pattern "pdf-rider-${VERSION}-win-x64.msix" \
+            --dir .
+
+      - name: Install Microsoft Store Developer CLI
+        shell: pwsh
+        run: |
+          dotnet tool install --global MSStore.CLI
+
+      - name: Configure Store credentials
+        shell: pwsh
+        env:
+          MICROSOFT_STORE_TENANT_ID: ${{ secrets.MICROSOFT_STORE_TENANT_ID }}
+          MICROSOFT_STORE_CLIENT_ID: ${{ secrets.MICROSOFT_STORE_CLIENT_ID }}
+          MICROSOFT_STORE_CLIENT_SECRET: ${{ secrets.MICROSOFT_STORE_CLIENT_SECRET }}
+        run: |
+          msstore reconfigure `
+            --tenantId $env:MICROSOFT_STORE_TENANT_ID `
+            --clientId $env:MICROSOFT_STORE_CLIENT_ID `
+            --clientSecret $env:MICROSOFT_STORE_CLIENT_SECRET
+
+      - name: Submit to Microsoft Store
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          msstore publish `
+            --inputDirectory . `
+            --appId 9NJD0V2MC740

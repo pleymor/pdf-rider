@@ -61,6 +61,8 @@ jobs:
              "pdf-reader-portable-${VERSION}-win-x64.exe"
           cp "src-tauri/target/release/bundle/nsis/PDF Reader_${VERSION}_x64-setup.exe" \
              "pdf-reader-${VERSION}-win-x64-setup.exe"
+          cp "src-tauri/target/release/bundle/msix/PDF Rider_${VERSION}_x64.msix" \
+             "pdf-rider-${VERSION}-win-x64.msix"
 
       - name: Check pre-release
         id: prerelease
@@ -82,5 +84,6 @@ jobs:
           files: |
             pdf-reader-portable-${{ steps.version.outputs.version }}-win-x64.exe
             pdf-reader-${{ steps.version.outputs.version }}-win-x64-setup.exe
+            pdf-rider-${{ steps.version.outputs.version }}-win-x64.msix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
