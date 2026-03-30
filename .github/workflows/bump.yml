@@ -124,7 +124,11 @@ jobs:
       - name: Install Microsoft Store Developer CLI
         shell: pwsh
         run: |
-          dotnet tool install --global MSStore.CLI
+          $release = Invoke-RestMethod "https://api.github.com/repos/microsoft/msstore-cli/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -match "win-x64\.zip$" } | Select-Object -First 1
+          Invoke-WebRequest $asset.browser_download_url -OutFile msstore.zip
+          Expand-Archive msstore.zip -DestinationPath "$env:LOCALAPPDATA\msstore-cli"
+          echo "$env:LOCALAPPDATA\msstore-cli" >> $env:GITHUB_PATH
 
       - name: Configure Store credentials
         shell: pwsh
