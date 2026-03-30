@@ -137,7 +137,7 @@ jobs:
           MICROSOFT_STORE_CLIENT_ID: ${{ secrets.MICROSOFT_STORE_CLIENT_ID }}
           MICROSOFT_STORE_CLIENT_SECRET: ${{ secrets.MICROSOFT_STORE_CLIENT_SECRET }}
         run: |
-          msstore reconfigure `
+          echo "y" | msstore reconfigure `
             --tenantId $env:MICROSOFT_STORE_TENANT_ID `
             --clientId $env:MICROSOFT_STORE_CLIENT_ID `
             --clientSecret $env:MICROSOFT_STORE_CLIENT_SECRET
