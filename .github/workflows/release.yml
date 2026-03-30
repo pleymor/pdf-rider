@@ -87,8 +87,8 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
           files: |
-            pdf-reader-portable-${{ steps.version.outputs.version }}-win-x64.exe
-            pdf-reader-${{ steps.version.outputs.version }}-win-x64-setup.exe
+            pdf-rider-portable-${{ steps.version.outputs.version }}-win-x64.exe
+            pdf-rider-${{ steps.version.outputs.version }}-win-x64-setup.exe
             pdf-rider-${{ steps.version.outputs.version }}-win-x64.msix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
