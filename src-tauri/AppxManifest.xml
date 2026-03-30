@@ -29,7 +29,7 @@
   </Resources>
 
   <Applications>
-    <Application Id="App" Executable="pdf-rider-portable.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="App" Executable="pdf-reader-portable.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="PDF Rider"
         Description="A simple, lightweight PDF reader with annotations and signing"
