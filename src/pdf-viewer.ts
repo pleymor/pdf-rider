@@ -110,11 +110,22 @@ export class PdfPageView {
       const viewport = page.getViewport({ scale, rotation: (page.rotate + rotation) % 360 });
       this._viewport = viewport;
 
-      // Size both canvases to viewport
+      // Render PDF content into an off-screen buffer first so the visible
+      // canvas is never blank — old content stays until the new frame is ready.
+      const buf = document.createElement("canvas");
+      buf.width  = viewport.width;
+      buf.height = viewport.height;
+      const bufCtx = buf.getContext("2d")!;
+      await page.render({ canvasContext: bufCtx, viewport }).promise;
+
+      // Atomic swap: resize + blit in one synchronous block.
       this.canvas.width  = viewport.width;
       this.canvas.height = viewport.height;
       this.canvas.style.width  = `${viewport.width}px`;
       this.canvas.style.height = `${viewport.height}px`;
+      this.canvas.getContext("2d")!.drawImage(buf, 0, 0);
+
+      // Size annotation canvas (no content to preserve here).
       this.annotationCanvas.width  = viewport.width;
       this.annotationCanvas.height = viewport.height;
       this.annotationCanvas.style.width  = `${viewport.width}px`;
@@ -122,11 +133,6 @@ export class PdfPageView {
 
       // Snap wrapper to actual rendered size
       this.setPlaceholderSize(viewport.width, viewport.height);
-
-      // Render PDF content
-      const ctx = this.canvas.getContext("2d")!;
-      ctx.clearRect(0, 0, viewport.width, viewport.height);
-      await page.render({ canvasContext: ctx, viewport }).promise;
 
       // Build overlay layers (text first — link layer scans text spans)
       await this.buildTextLayer(page, viewport);
@@ -702,6 +708,39 @@ export class PdfViewer {
 
   reflow(): void {
     const savedPage = this._focusedPage;
+
+    // When the column count won't change, avoid tearing down the DOM entirely
+    // (which causes a full black-screen flash).  Instead update placeholder
+    // sizes and re-render visible pages in place — old canvas content stays
+    // visible until the new render overwrites it.
+    if (this.pdfDoc && this.pageViews.length === this._pageCount) {
+      const swapped        = this._rotation % 180 !== 0;
+      const containerWidth = Math.max(1, this.scrollEl.clientWidth - 40);
+      const refW           = Math.max(...this.pageDimensions.map(d => swapped ? d.height : d.width)) * this._scale;
+      const newCols        = calculateColumnCount(containerWidth, refW, PAGE_GAP);
+
+      if (newCols === this.columnCount) {
+        for (const view of this.pageViews) {
+          const dim = this.pageDimensions[view.pageNum - 1];
+          if (dim) view.setPlaceholderSize(
+            (swapped ? dim.height : dim.width) * this._scale,
+            (swapped ? dim.width  : dim.height) * this._scale
+          );
+          view.rendered = false;
+        }
+        const scrollRect = this.scrollEl.getBoundingClientRect();
+        for (const view of this.pageViews) {
+          const r = view.wrapper.getBoundingClientRect();
+          if (r.bottom > scrollRect.top - 200 && r.top < scrollRect.bottom + 200) {
+            void this._renderPage(view);
+          }
+        }
+        this.onLayoutChangedCb?.(this.pageViews);
+        this.goToPage(savedPage, "instant");
+        return;
+      }
+    }
+
     this.buildLayout();
     this.goToPage(savedPage, "instant");
   }
