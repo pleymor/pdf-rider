@@ -147,7 +147,7 @@ jobs:
             ClientId = $env:MICROSOFT_STORE_CLIENT_ID
           } | ConvertTo-Json
           $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-          $configPath = Join-Path $configDir "config.json"
+          $configPath = Join-Path $configDir "settings.json"
           [System.IO.File]::WriteAllText($configPath, $config, $utf8NoBom)
 
           # Store ClientSecret in Windows Credential Manager (keyed by ClientId)
