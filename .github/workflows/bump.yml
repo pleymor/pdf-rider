@@ -132,6 +132,7 @@ jobs:
           echo "$env:LOCALAPPDATA\msstore-cli" >> $env:GITHUB_PATH
 
       - name: Configure and submit to Microsoft Store
+        continue-on-error: true
         shell: pwsh
         env:
           MICROSOFT_STORE_TENANT_ID: ${{ secrets.MICROSOFT_STORE_TENANT_ID }}
