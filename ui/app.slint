@@ -27,6 +27,34 @@ component IconButton inherits Rectangle {
     }
 }
 
+component ToggleIconButton inherits Rectangle {
+    in property <image> icon;
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    background: root.active ? #4d9eff : (ta.has-hover && root.enabled ? #444 : transparent);
+
+    Image {
+        width: 16px;
+        height: 16px;
+        source: root.icon;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        opacity: root.enabled ? 1.0 : 0.3;
+        colorize: root.active ? #ffffff : #cccccc;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+        mouse-cursor: root.enabled ? pointer : default;
+    }
+}
+
 // Data model for a single page image in the viewer
 export struct PageData {
     image: image,
@@ -44,6 +72,7 @@ export component App inherits Window {
 
     // Callbacks exposed to Rust
     callback open-file();
+    callback save-file();
     callback zoom-in();
     callback zoom-out();
     callback fit-width();
@@ -52,8 +81,14 @@ export component App inherits Window {
     callback page-prev();
     callback page-next();
     callback page-goto(int);
-    callback viewport-changed(length, length);
-    callback drop-file(string);
+    callback set-tool(string);
+    // Pointer events on a page: (page-num, x-px, y-px)
+    callback page-pointer-down(int, float, float);
+    callback page-pointer-move(int, float, float);
+    callback page-pointer-up(int, float, float);
+    // Selection/move on a page
+    callback page-click(int, float, float);
+    callback delete-selected();
 
     // Properties bound from Rust
     in-out property <string> status-text: "No file open";
@@ -64,6 +99,21 @@ export component App inherits Window {
     in-out property <int> page-count: 0;
     in-out property <int> current-page: 1;
     in-out property <bool> loading: false;
+    in-out property <string> active-tool: "select";
+    // Drawing preview (canvas pixel coords relative to the page being drawn on)
+    in-out property <bool> drawing: false;
+    in-out property <int> drawing-page: 0;
+    in-out property <float> draw-x: 0;
+    in-out property <float> draw-y: 0;
+    in-out property <float> draw-w: 0;
+    in-out property <float> draw-h: 0;
+    // Selection highlight
+    in-out property <bool> has-selection: false;
+    in-out property <int> selection-page: 0;
+    in-out property <float> sel-x: 0;
+    in-out property <float> sel-y: 0;
+    in-out property <float> sel-w: 0;
+    in-out property <float> sel-h: 0;
     // Expose window dimensions to Rust
     out property <float> viewer-width: self.width / 1px;
     out property <float> viewer-height: self.height / 1px;
@@ -86,7 +136,6 @@ export component App inherits Window {
                 padding-right: 8px;
                 spacing: 4px;
                 alignment: start;
-                // Center children vertically in the 40px bar
                 padding-top: 6px;
                 padding-bottom: 6px;
 
@@ -94,6 +143,13 @@ export component App inherits Window {
                 IconButton {
                     icon: @image-url("icons/open.svg");
                     clicked => { root.open-file(); }
+                }
+
+                // Save
+                IconButton {
+                    icon: @image-url("icons/save.svg");
+                    enabled: root.has-document;
+                    clicked => { root.save-file(); }
                 }
 
                 // Separator
@@ -167,6 +223,37 @@ export component App inherits Window {
                     clicked => { root.rotate(); }
                 }
 
+                // Separator
+                Rectangle { width: 1px; height: 28px; background: #555; }
+
+                // Annotation tools
+                ToggleIconButton {
+                    icon: @image-url("icons/select.svg");
+                    active: root.active-tool == "select";
+                    clicked => { root.set-tool("select"); }
+                }
+
+                ToggleIconButton {
+                    icon: @image-url("icons/rect.svg");
+                    active: root.active-tool == "rect";
+                    enabled: root.has-document;
+                    clicked => { root.set-tool("rect"); }
+                }
+
+                ToggleIconButton {
+                    icon: @image-url("icons/circle.svg");
+                    active: root.active-tool == "circle";
+                    enabled: root.has-document;
+                    clicked => { root.set-tool("circle"); }
+                }
+
+                ToggleIconButton {
+                    icon: @image-url("icons/text.svg");
+                    active: root.active-tool == "text";
+                    enabled: root.has-document;
+                    clicked => { root.set-tool("text"); }
+                }
+
                 // Spacer
                 Rectangle { }
 
@@ -207,6 +294,53 @@ export component App inherits Window {
                                 color: #666666;
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
+                            }
+
+                            // Drawing preview overlay
+                            if root.drawing && root.drawing-page == page-data.page-num: Rectangle {
+                                x: root.draw-x * 1px;
+                                y: root.draw-y * 1px;
+                                width: root.draw-w * 1px;
+                                height: root.draw-h * 1px;
+                                border-color: #ff0000;
+                                border-width: 2px;
+                                background: transparent;
+                                border-radius: root.active-tool == "circle" ? self.width / 2 : 0;
+                            }
+
+                            // Selection box overlay
+                            if root.has-selection && root.selection-page == page-data.page-num: Rectangle {
+                                x: root.sel-x * 1px - 4px;
+                                y: root.sel-y * 1px - 4px;
+                                width: root.sel-w * 1px + 8px;
+                                height: root.sel-h * 1px + 8px;
+                                border-color: #4d9eff;
+                                border-width: 1.5px;
+                                background: transparent;
+                            }
+
+                            // Pointer event capture for annotation interaction
+                            page-ta := TouchArea {
+                                mouse-cursor: root.active-tool == "select" ? default : crosshair;
+                                pointer-event(evt) => {
+                                    if evt.kind == PointerEventKind.down && evt.button == PointerEventButton.left {
+                                        if root.active-tool == "select" {
+                                            root.page-click(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
+                                        } else {
+                                            root.page-pointer-down(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
+                                        }
+                                    }
+                                    if evt.kind == PointerEventKind.up && evt.button == PointerEventButton.left {
+                                        if root.active-tool != "select" {
+                                            root.page-pointer-up(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
+                                        }
+                                    }
+                                }
+                                moved => {
+                                    if self.pressed && root.active-tool != "select" {
+                                        root.page-pointer-move(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
+                                    }
+                                }
                             }
                         }
                     }

@@ -20,6 +20,11 @@ impl AnnotationStore {
         }
     }
 
+    pub fn add(&mut self, ann: Annotation) {
+        let page = ann.page();
+        self.pages.entry(page).or_default().push(ann);
+    }
+
     pub fn get_for_page(&self, page: u32) -> &[Annotation] {
         self.pages.get(&page).map(|v| v.as_slice()).unwrap_or(&[])
     }

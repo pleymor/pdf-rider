@@ -1,4 +1,4 @@
-use crate::annotation::{overlay, store::AnnotationStore};
+use crate::annotation::{interaction::InteractionState, overlay, store::AnnotationStore};
 use crate::pdf::writer;
 use crate::{App, PageData};
 use pdfium_render::prelude::*;
@@ -46,6 +46,8 @@ struct ViewerState {
     scale: f32,
     rotation: i32, // 0, 90, 180, 270
     annotations: AnnotationStore,
+    interaction: InteractionState,
+    dirty: bool,
 }
 
 impl Default for ViewerState {
@@ -57,6 +59,8 @@ impl Default for ViewerState {
             scale: 1.5,
             rotation: 0,
             annotations: AnnotationStore::default(),
+            interaction: InteractionState::default(),
+            dirty: false,
         }
     }
 }
@@ -373,6 +377,125 @@ pub fn setup(ui: &App) {
         });
     }
 
+    // ── Tool switching ─────────────────────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let state = state.clone();
+        ui.on_set_tool(move |tool| {
+            let ui = ui_weak.unwrap();
+            let mut s = state.lock().unwrap();
+            s.interaction.tool = crate::annotation::interaction::Tool::from_str(&tool);
+            ui.set_active_tool(tool);
+        });
+    }
+
+    // ── Pointer events on pages ─────────────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let state = state.clone();
+        ui.on_page_pointer_down(move |page, x, y| {
+            let ui = ui_weak.unwrap();
+            let mut s = state.lock().unwrap();
+            s.interaction.pointer_down(page as u32, x, y);
+            ui.set_drawing(true);
+            ui.set_drawing_page(page);
+            ui.set_draw_x(x.min(x));
+            ui.set_draw_y(y.min(y));
+            ui.set_draw_w(0.0);
+            ui.set_draw_h(0.0);
+        });
+    }
+    {
+        let ui_weak = ui.as_weak();
+        let state = state.clone();
+        ui.on_page_pointer_move(move |_page, x, y| {
+            let ui = ui_weak.unwrap();
+            let s = state.lock().unwrap();
+            if s.interaction.drawing {
+                let sx = s.interaction.start_x;
+                let sy = s.interaction.start_y;
+                ui.set_draw_x(sx.min(x));
+                ui.set_draw_y(sy.min(y));
+                ui.set_draw_w((x - sx).abs());
+                ui.set_draw_h((y - sy).abs());
+            }
+        });
+    }
+    {
+        let ui_weak = ui.as_weak();
+        let pdfium = pdfium.clone();
+        let state = state.clone();
+        ui.on_page_pointer_up(move |page, x, y| {
+            let ui = ui_weak.unwrap();
+            ui.set_drawing(false);
+            let mut s = state.lock().unwrap();
+            let page_idx = (page - 1) as usize;
+            let page_height_pt = s.page_dims.get(page_idx)
+                .map(|d| if s.rotation == 90 || s.rotation == 270 { d.width_pt } else { d.height_pt })
+                .unwrap_or(841.0);
+            let scale = s.scale;
+
+            if let Some(ann) = s.interaction.pointer_up(
+                page as u32, x, y, scale, page_height_pt,
+            ) {
+                s.annotations.add(ann);
+                s.dirty = true;
+                update_ui(&pdfium, &s, &ui);
+            }
+        });
+    }
+
+    // ── Click in select mode (hit test) ─────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let state = state.clone();
+        ui.on_page_click(move |page, x, y| {
+            let ui = ui_weak.unwrap();
+            let s = state.lock().unwrap();
+            let page_idx = (page - 1) as usize;
+            let page_height_pt = s.page_dims.get(page_idx)
+                .map(|d| if s.rotation == 90 || s.rotation == 270 { d.width_pt } else { d.height_pt })
+                .unwrap_or(841.0);
+            let scale = s.scale;
+
+            // Hit test: find annotation under click point
+            let anns = s.annotations.get_for_page(page as u32);
+            if let Some((idx, bounds)) = hit_test(anns, x, y, scale as f64, page_height_pt as f64) {
+                ui.set_has_selection(true);
+                ui.set_selection_page(page);
+                ui.set_sel_x(bounds.0);
+                ui.set_sel_y(bounds.1);
+                ui.set_sel_w(bounds.2);
+                ui.set_sel_h(bounds.3);
+                let _ = idx; // will be used for move/resize/delete later
+            } else {
+                ui.set_has_selection(false);
+            }
+        });
+    }
+
+    // ── Save ─────────────────────────────────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let state = state.clone();
+        ui.on_save_file(move || {
+            let ui = ui_weak.unwrap();
+            let s = state.lock().unwrap();
+            let Some(path) = &s.file_path else { return };
+            let all_annotations = s.annotations.all();
+            if all_annotations.is_empty() { return; }
+
+            match save_annotated_pdf(path, &all_annotations) {
+                Ok(()) => {
+                    ui.set_status_text(SharedString::from("Saved"));
+                }
+                Err(e) => {
+                    ui.set_status_text(SharedString::from(format!("Save error: {}", e)));
+                }
+            }
+        });
+    }
+
     // ── Scroll position tracking (poll every 150ms) ─────────────────────────
     {
         let ui_weak = ui.as_weak();
@@ -461,4 +584,123 @@ fn load_document(pdfium: &Pdfium, path: &std::path::Path) -> Result<LoadedDoc, S
         dims,
         annotations: meta.annotations,
     })
+}
+
+/// Hit test: find annotation at canvas pixel (x, y).
+/// Returns (index, (canvas_left, canvas_top, canvas_width, canvas_height)) or None.
+fn hit_test(
+    annotations: &[crate::pdf::models::Annotation],
+    canvas_x: f32,
+    canvas_y: f32,
+    scale: f64,
+    page_height_pt: f64,
+) -> Option<(usize, (f32, f32, f32, f32))> {
+    use crate::pdf::models::Annotation;
+
+    // Test in reverse order (topmost first)
+    for (i, ann) in annotations.iter().enumerate().rev() {
+        let bounds = ann_canvas_bounds(ann, scale, page_height_pt);
+        let (left, top, w, h) = bounds;
+        let tolerance = 5.0;
+        if canvas_x >= left - tolerance
+            && canvas_x <= left + w + tolerance
+            && canvas_y >= top - tolerance
+            && canvas_y <= top + h + tolerance
+        {
+            return Some((i, bounds));
+        }
+    }
+    None
+}
+
+/// Get canvas-pixel bounding box for an annotation.
+fn ann_canvas_bounds(
+    ann: &crate::pdf::models::Annotation,
+    scale: f64,
+    page_height_pt: f64,
+) -> (f32, f32, f32, f32) {
+    use crate::pdf::models::Annotation;
+
+    match ann {
+        Annotation::Rect(r) => {
+            let left = (r.x * scale) as f32;
+            let top = ((page_height_pt - r.y - r.height) * scale) as f32;
+            let w = (r.width * scale) as f32;
+            let h = (r.height * scale) as f32;
+            (left, top, w, h)
+        }
+        Annotation::Circle(c) => {
+            let left = (c.x * scale) as f32;
+            let top = ((page_height_pt - c.y - c.height) * scale) as f32;
+            let w = (c.width * scale) as f32;
+            let h = (c.height * scale) as f32;
+            (left, top, w, h)
+        }
+        Annotation::Text(t) => {
+            let left = (t.x * scale) as f32;
+            let top = ((page_height_pt - t.y) * scale) as f32;
+            let w = (t.width * scale) as f32;
+            let h = (t.font_size * 1.2 * t.content.split('\n').count() as f64 * scale) as f32;
+            (left, top, w, h)
+        }
+        Annotation::Signature(s) => {
+            let left = (s.x * scale) as f32;
+            let top = ((page_height_pt - s.y - s.height) * scale) as f32;
+            let w = (s.width * scale) as f32;
+            let h = (s.height * scale) as f32;
+            (left, top, w, h)
+        }
+    }
+}
+
+fn save_annotated_pdf(
+    path: &std::path::Path,
+    annotations: &[crate::pdf::models::Annotation],
+) -> Result<(), String> {
+    use std::collections::HashMap;
+
+    let mut doc = lopdf::Document::load(path).map_err(|e| format!("{}", e))?;
+
+    // Load existing meta to preserve stream IDs
+    let mut meta = writer::load_meta(&doc);
+    meta.annotations = annotations.to_vec();
+
+    // Group annotations by page
+    let mut by_page: HashMap<u32, Vec<&crate::pdf::models::Annotation>> = HashMap::new();
+    for ann in annotations {
+        by_page.entry(ann.page()).or_default().push(ann);
+    }
+
+    // Get page object IDs
+    let page_ids: Vec<(u32, lopdf::ObjectId)> = doc
+        .get_pages()
+        .into_iter()
+        .map(|(num, id)| (num, id))
+        .collect();
+
+    // Write annotations per page
+    for (page_num, page_id) in &page_ids {
+        let page_anns: Vec<crate::pdf::models::Annotation> = by_page
+            .get(page_num)
+            .map(|v| v.iter().map(|a| (*a).clone()).collect())
+            .unwrap_or_default();
+
+        let existing_sid = meta.stream_ids.get(page_num).map(|arr| (arr[0], arr[1] as u16));
+
+        match writer::write_annotations_for_page(&mut doc, *page_id, &page_anns, existing_sid)? {
+            Some(sid) => {
+                meta.stream_ids.insert(*page_num, [sid.0, sid.1 as u32]);
+            }
+            None => {
+                meta.stream_ids.remove(page_num);
+            }
+        }
+    }
+
+    // Save metadata
+    writer::save_meta(&mut doc, &meta)?;
+
+    // Write to file
+    doc.save(path).map_err(|e| format!("{}", e))?;
+    Ok(())
 }
