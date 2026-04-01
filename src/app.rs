@@ -458,19 +458,365 @@ pub fn setup(ui: &App) {
                 .unwrap_or(841.0);
             let scale = s.scale;
 
+            // Check if clicking a resize handle first
+            if s.interaction.selected_idx.is_some()
+                && s.interaction.selected_page == page as u32
+                && ui.get_has_selection()
+            {
+                let sx = ui.get_sel_x();
+                let sy = ui.get_sel_y();
+                let sw = ui.get_sel_w();
+                let sh = ui.get_sel_h();
+                let handle_r = 10.0_f32;
+
+                // NW
+                if (x - sx).abs() < handle_r && (y - sy).abs() < handle_r {
+                    drop(s);
+                    ui.invoke_resize_start(0, page, sx + sw, sy + sh);
+                    return;
+                }
+                // NE
+                if (x - (sx + sw)).abs() < handle_r && (y - sy).abs() < handle_r {
+                    drop(s);
+                    ui.invoke_resize_start(1, page, sx, sy + sh);
+                    return;
+                }
+                // SW
+                if (x - sx).abs() < handle_r && (y - (sy + sh)).abs() < handle_r {
+                    drop(s);
+                    ui.invoke_resize_start(2, page, sx + sw, sy);
+                    return;
+                }
+                // SE
+                if (x - (sx + sw)).abs() < handle_r && (y - (sy + sh)).abs() < handle_r {
+                    drop(s);
+                    ui.invoke_resize_start(3, page, sx, sy);
+                    return;
+                }
+            }
+
             // Hit test: find annotation under click point
             let anns = s.annotations.get_for_page(page as u32);
             if let Some((idx, bounds)) = hit_test(anns, x, y, scale as f64, page_height_pt as f64) {
+                let ann = &anns[idx];
+                let type_str = ann_type_str(ann);
+                // Sync UI style from selected annotation
+                let (cr, cg, cb) = match ann {
+                    crate::pdf::models::Annotation::Rect(r) => (r.color.r, r.color.g, r.color.b),
+                    crate::pdf::models::Annotation::Circle(c) => (c.color.r, c.color.g, c.color.b),
+                    crate::pdf::models::Annotation::Text(t) => (t.color.r, t.color.g, t.color.b),
+                    crate::pdf::models::Annotation::Signature(_) => (0, 0, 0),
+                };
+                let sw = match ann {
+                    crate::pdf::models::Annotation::Rect(r) => r.stroke_width,
+                    crate::pdf::models::Annotation::Circle(c) => c.stroke_width,
+                    _ => 2.0,
+                };
+                let fs = match ann {
+                    crate::pdf::models::Annotation::Text(t) => t.font_size,
+                    _ => 14.0,
+                };
+
+                drop(s);
+                let mut s = state.lock().unwrap();
+                s.interaction.selected_idx = Some(idx);
+                s.interaction.selected_page = page as u32;
+                s.interaction.dragging = false;
                 ui.set_has_selection(true);
                 ui.set_selection_page(page);
                 ui.set_sel_x(bounds.0);
                 ui.set_sel_y(bounds.1);
                 ui.set_sel_w(bounds.2);
                 ui.set_sel_h(bounds.3);
-                let _ = idx; // will be used for move/resize/delete later
+                ui.set_selection_type(type_str.into());
+                ui.set_cur_r(cr as i32);
+                ui.set_cur_g(cg as i32);
+                ui.set_cur_b(cb as i32);
+                ui.set_cur_stroke_width(sw as i32);
+                ui.set_cur_font_size(fs as i32);
             } else {
+                drop(s);
+                let mut s = state.lock().unwrap();
+                s.interaction.clear_selection();
                 ui.set_has_selection(false);
+                ui.set_selection_type("".into());
             }
+        });
+    }
+
+    // ── Drag move (select mode) ─────────────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let pdfium = pdfium.clone();
+        let state = state.clone();
+        ui.on_page_drag_move(move |page, x, y| {
+            let ui = ui_weak.unwrap();
+            let mut s = state.lock().unwrap();
+            let Some(idx) = s.interaction.selected_idx else { return };
+            let sel_page = s.interaction.selected_page;
+            if sel_page != page as u32 { return; }
+            let scale = s.scale;
+
+            if !s.interaction.dragging {
+                let ann_clone = s.annotations.get_for_page(sel_page).get(idx).cloned();
+                if let Some(ann) = ann_clone {
+                    s.interaction.start_drag(x, y, &ann);
+                }
+                return;
+            }
+
+            // Compute new selection box position from drag delta (visual only, no re-render)
+            let dx_px = x - s.interaction.drag_start_x;
+            let dy_px = y - s.interaction.drag_start_y;
+            let page_height_pt = s.page_dims.get((page - 1) as usize)
+                .map(|d| if s.rotation == 90 || s.rotation == 270 { d.width_pt } else { d.height_pt })
+                .unwrap_or(841.0);
+
+            // Get original bounds to compute visual offset
+            let orig_x = s.interaction.drag_orig_pdf_x;
+            let orig_y = s.interaction.drag_orig_pdf_y;
+            let dx_pdf = dx_px as f64 / scale as f64;
+            let dy_pdf = -(dy_px as f64) / scale as f64;
+
+            // Temporarily compute where the annotation would be
+            let ann_clone = s.annotations.get_for_page(sel_page).get(idx).cloned();
+            if let Some(mut tmp_ann) = ann_clone {
+                crate::annotation::interaction::set_ann_origin(&mut tmp_ann, orig_x + dx_pdf, orig_y + dy_pdf);
+                let bounds = ann_canvas_bounds(&tmp_ann, scale as f64, page_height_pt as f64);
+                ui.set_sel_x(bounds.0);
+                ui.set_sel_y(bounds.1);
+                ui.set_sel_w(bounds.2);
+                ui.set_sel_h(bounds.3);
+            }
+        });
+    }
+
+    // ── Drag end (select mode) ──────────────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let pdfium = pdfium.clone();
+        let state = state.clone();
+        ui.on_page_drag_end(move |page, x, y| {
+            let ui = ui_weak.unwrap();
+            let mut s = state.lock().unwrap();
+            if !s.interaction.dragging {
+                s.interaction.end_drag();
+                return;
+            }
+            let Some(idx) = s.interaction.selected_idx else {
+                s.interaction.end_drag();
+                return;
+            };
+            let sel_page = s.interaction.selected_page;
+            let scale = s.scale;
+
+            // Apply final position
+            let dx_pdf = (x - s.interaction.drag_start_x) as f64 / scale as f64;
+            let dy_pdf = -(y - s.interaction.drag_start_y) as f64 / scale as f64;
+            let orig_x = s.interaction.drag_orig_pdf_x;
+            let orig_y = s.interaction.drag_orig_pdf_y;
+
+            if let Some(anns) = s.annotations.get_mut_for_page(sel_page) {
+                if let Some(ann) = anns.get_mut(idx) {
+                    crate::annotation::interaction::set_ann_origin(ann, orig_x + dx_pdf, orig_y + dy_pdf);
+                }
+            }
+            s.interaction.end_drag();
+            s.dirty = true;
+            update_ui(&pdfium, &s, &ui);
+        });
+    }
+
+    // ── Delete selected ─────────────────────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let pdfium = pdfium.clone();
+        let state = state.clone();
+        ui.on_delete_selected(move || {
+            let ui = ui_weak.unwrap();
+            let mut s = state.lock().unwrap();
+            let Some(idx) = s.interaction.selected_idx else { return };
+            let page = s.interaction.selected_page;
+            s.annotations.remove(page, idx);
+            s.interaction.clear_selection();
+            s.dirty = true;
+            ui.set_has_selection(false);
+            update_ui(&pdfium, &s, &ui);
+        });
+    }
+
+    // ── Set color ────────────────────────────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let pdfium = pdfium.clone();
+        let state = state.clone();
+        ui.on_set_color(move |r, g, b| {
+            let ui = ui_weak.unwrap();
+            let mut s = state.lock().unwrap();
+            let color = crate::pdf::models::RgbColor { r: r as u8, g: g as u8, b: b as u8 };
+            s.interaction.color = color.clone();
+            ui.set_cur_r(r);
+            ui.set_cur_g(g);
+            ui.set_cur_b(b);
+
+            // Apply to selected annotation if any
+            if let Some(idx) = s.interaction.selected_idx {
+                let page = s.interaction.selected_page;
+                if let Some(anns) = s.annotations.get_mut_for_page(page) {
+                    if let Some(ann) = anns.get_mut(idx) {
+                        set_ann_color(ann, &color);
+                        s.dirty = true;
+                    }
+                }
+                update_ui(&pdfium, &s, &ui);
+            }
+        });
+    }
+
+    // ── Set stroke width ─────────────────────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let pdfium = pdfium.clone();
+        let state = state.clone();
+        ui.on_set_stroke_width(move |w| {
+            let ui = ui_weak.unwrap();
+            let mut s = state.lock().unwrap();
+            s.interaction.stroke_width = w as f64;
+            ui.set_cur_stroke_width(w as i32);
+
+            if let Some(idx) = s.interaction.selected_idx {
+                let page = s.interaction.selected_page;
+                if let Some(anns) = s.annotations.get_mut_for_page(page) {
+                    if let Some(ann) = anns.get_mut(idx) {
+                        set_ann_stroke_width(ann, w as f64);
+                        s.dirty = true;
+                    }
+                }
+                update_ui(&pdfium, &s, &ui);
+            }
+        });
+    }
+
+    // ── Set font size ────────────────────────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let pdfium = pdfium.clone();
+        let state = state.clone();
+        ui.on_set_font_size(move |fs| {
+            let ui = ui_weak.unwrap();
+            let mut s = state.lock().unwrap();
+            s.interaction.font_size = fs as f64;
+            ui.set_cur_font_size(fs as i32);
+
+            if let Some(idx) = s.interaction.selected_idx {
+                let page = s.interaction.selected_page;
+                if let Some(anns) = s.annotations.get_mut_for_page(page) {
+                    if let Some(ann) = anns.get_mut(idx) {
+                        if let crate::pdf::models::Annotation::Text(t) = ann {
+                            t.font_size = fs as f64;
+                            s.dirty = true;
+                        }
+                    }
+                }
+                update_ui(&pdfium, &s, &ui);
+            }
+        });
+    }
+
+    // ── Resize ───────────────────────────────────────────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let state = state.clone();
+        ui.on_resize_start(move |_handle, page, anchor_x, anchor_y| {
+            let ui = ui_weak.unwrap();
+            let mut s = state.lock().unwrap();
+            if s.interaction.selected_idx.is_none() { return; }
+            s.interaction.dragging = false;
+            // Store anchor (the fixed corner) in canvas px
+            s.interaction.drag_start_x = anchor_x;
+            s.interaction.drag_start_y = anchor_y;
+            s.interaction.start_page = page as u32;
+            ui.set_resizing(true);
+        });
+    }
+    {
+        let ui_weak = ui.as_weak();
+        let pdfium = pdfium.clone();
+        let state = state.clone();
+        ui.on_resize_move(move |mouse_x, mouse_y| {
+            let ui = ui_weak.unwrap();
+            let s = state.lock().unwrap();
+            if s.interaction.selected_idx.is_none() { return; }
+
+            // Anchor is the fixed corner, mouse is the moving corner
+            let ax = s.interaction.drag_start_x;
+            let ay = s.interaction.drag_start_y;
+
+            // Update selection box visually (no re-render)
+            let left_px = ax.min(mouse_x);
+            let top_px = ay.min(mouse_y);
+            let w_px = (mouse_x - ax).abs().max(10.0);
+            let h_px = (mouse_y - ay).abs().max(10.0);
+
+            ui.set_sel_x(left_px);
+            ui.set_sel_y(top_px);
+            ui.set_sel_w(w_px);
+            ui.set_sel_h(h_px);
+        });
+    }
+    {
+        let ui_weak = ui.as_weak();
+        let pdfium = pdfium.clone();
+        let state = state.clone();
+        ui.on_resize_end(move || {
+            let ui = ui_weak.unwrap();
+            let mut s = state.lock().unwrap();
+            let Some(idx) = s.interaction.selected_idx else {
+                ui.set_resizing(false);
+                return;
+            };
+            let page = s.interaction.selected_page;
+            let scale = s.scale;
+            let page_idx = (page - 1) as usize;
+            let page_height_pt = s.page_dims.get(page_idx)
+                .map(|d| if s.rotation == 90 || s.rotation == 270 { d.width_pt } else { d.height_pt })
+                .unwrap_or(841.0) as f64;
+
+            // Read final selection box from UI
+            let left_px = ui.get_sel_x();
+            let top_px = ui.get_sel_y();
+            let w_px = ui.get_sel_w();
+            let h_px = ui.get_sel_h();
+
+            let pdf_left = left_px as f64 / scale as f64;
+            let pdf_bottom = page_height_pt - (top_px as f64 + h_px as f64) / scale as f64;
+            let pdf_w = w_px as f64 / scale as f64;
+            let pdf_h = h_px as f64 / scale as f64;
+
+            if pdf_w > 5.0 && pdf_h > 5.0 {
+                if let Some(anns) = s.annotations.get_mut_for_page(page) {
+                    if let Some(ann) = anns.get_mut(idx) {
+                        match ann {
+                            crate::pdf::models::Annotation::Rect(r) => {
+                                r.x = pdf_left; r.y = pdf_bottom; r.width = pdf_w; r.height = pdf_h;
+                            }
+                            crate::pdf::models::Annotation::Circle(c) => {
+                                c.x = pdf_left; c.y = pdf_bottom; c.width = pdf_w; c.height = pdf_h;
+                            }
+                            crate::pdf::models::Annotation::Text(t) => {
+                                t.x = pdf_left; t.y = pdf_bottom + pdf_h; t.width = pdf_w;
+                            }
+                            crate::pdf::models::Annotation::Signature(sig) => {
+                                sig.x = pdf_left; sig.y = pdf_bottom; sig.width = pdf_w; sig.height = pdf_h;
+                            }
+                        }
+                    }
+                }
+            }
+
+            s.dirty = true;
+            ui.set_resizing(false);
+            update_ui(&pdfium, &s, &ui);
         });
     }
 
@@ -650,6 +996,32 @@ fn ann_canvas_bounds(
             let h = (s.height * scale) as f32;
             (left, top, w, h)
         }
+    }
+}
+
+fn set_ann_color(ann: &mut crate::pdf::models::Annotation, color: &crate::pdf::models::RgbColor) {
+    match ann {
+        crate::pdf::models::Annotation::Rect(r) => r.color = color.clone(),
+        crate::pdf::models::Annotation::Circle(c) => c.color = color.clone(),
+        crate::pdf::models::Annotation::Text(t) => t.color = color.clone(),
+        crate::pdf::models::Annotation::Signature(_) => {}
+    }
+}
+
+fn set_ann_stroke_width(ann: &mut crate::pdf::models::Annotation, w: f64) {
+    match ann {
+        crate::pdf::models::Annotation::Rect(r) => r.stroke_width = w,
+        crate::pdf::models::Annotation::Circle(c) => c.stroke_width = w,
+        _ => {}
+    }
+}
+
+fn ann_type_str(ann: &crate::pdf::models::Annotation) -> &'static str {
+    match ann {
+        crate::pdf::models::Annotation::Rect(_) => "rect",
+        crate::pdf::models::Annotation::Circle(_) => "circle",
+        crate::pdf::models::Annotation::Text(_) => "text",
+        crate::pdf::models::Annotation::Signature(_) => "signature",
     }
 }
 

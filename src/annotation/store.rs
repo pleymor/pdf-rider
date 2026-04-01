@@ -29,6 +29,19 @@ impl AnnotationStore {
         self.pages.get(&page).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
+    pub fn get_mut_for_page(&mut self, page: u32) -> Option<&mut Vec<Annotation>> {
+        self.pages.get_mut(&page)
+    }
+
+    pub fn remove(&mut self, page: u32, idx: usize) -> Option<Annotation> {
+        if let Some(anns) = self.pages.get_mut(&page) {
+            if idx < anns.len() {
+                return Some(anns.remove(idx));
+            }
+        }
+        None
+    }
+
     pub fn all(&self) -> Vec<Annotation> {
         let mut result = Vec::new();
         for anns in self.pages.values() {

@@ -1,4 +1,4 @@
-import { VerticalBox, HorizontalBox, Button, ScrollView, LineEdit, Spinner } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, Button, ScrollView, LineEdit, Spinner, SpinBox } from "std-widgets.slint";
 
 component IconButton inherits Rectangle {
     in property <image> icon;
@@ -66,6 +66,7 @@ export struct PageData {
 
 export component App inherits Window {
     title: "PDF Rider";
+    icon: @image-url("../src-tauri/icons/icon.png");
     preferred-width: 1280px;
     preferred-height: 800px;
     background: #1e1e1e;
@@ -88,7 +89,16 @@ export component App inherits Window {
     callback page-pointer-up(int, float, float);
     // Selection/move on a page
     callback page-click(int, float, float);
+    callback page-drag-move(int, float, float);
+    callback page-drag-end(int, float, float);
     callback delete-selected();
+    callback set-color(int, int, int);
+    callback set-stroke-width(int);
+    callback set-font-size(int);
+    // Resize: (handle-index 0=NW 1=NE 2=SW 3=SE, page, x, y)
+    callback resize-start(int, int, float, float);
+    callback resize-move(float, float);
+    callback resize-end();
 
     // Properties bound from Rust
     in-out property <string> status-text: "No file open";
@@ -99,7 +109,17 @@ export component App inherits Window {
     in-out property <int> page-count: 0;
     in-out property <int> current-page: 1;
     in-out property <bool> loading: false;
+    in-out property <bool> edit-mode: false;
     in-out property <string> active-tool: "select";
+    // Current drawing color (RGB 0-255)
+    in-out property <int> cur-r: 255;
+    in-out property <int> cur-g: 0;
+    in-out property <int> cur-b: 0;
+    // Selected annotation type for context styles
+    in-out property <string> selection-type: ""; // "", "rect", "circle", "text", "signature"
+    in-out property <int> cur-stroke-width: 2;
+    in-out property <int> cur-font-size: 14;
+    in-out property <bool> resizing: false;
     // Drawing preview (canvas pixel coords relative to the page being drawn on)
     in-out property <bool> drawing: false;
     in-out property <int> drawing-page: 0;
@@ -226,32 +246,105 @@ export component App inherits Window {
                 // Separator
                 Rectangle { width: 1px; height: 28px; background: #555; }
 
-                // Annotation tools
+                // Edit mode toggle
                 ToggleIconButton {
+                    icon: @image-url("icons/edit.svg");
+                    active: root.edit-mode;
+                    enabled: root.has-document;
+                    clicked => {
+                        root.edit-mode = !root.edit-mode;
+                        if !root.edit-mode {
+                            root.set-tool("select");
+                            root.has-selection = false;
+                        }
+                    }
+                }
+
+                // Annotation tools (only in edit mode)
+                if root.edit-mode: ToggleIconButton {
                     icon: @image-url("icons/select.svg");
                     active: root.active-tool == "select";
                     clicked => { root.set-tool("select"); }
                 }
 
-                ToggleIconButton {
+                if root.edit-mode: ToggleIconButton {
                     icon: @image-url("icons/rect.svg");
                     active: root.active-tool == "rect";
                     enabled: root.has-document;
                     clicked => { root.set-tool("rect"); }
                 }
 
-                ToggleIconButton {
+                if root.edit-mode: ToggleIconButton {
                     icon: @image-url("icons/circle.svg");
                     active: root.active-tool == "circle";
                     enabled: root.has-document;
                     clicked => { root.set-tool("circle"); }
                 }
 
-                ToggleIconButton {
+                if root.edit-mode: ToggleIconButton {
                     icon: @image-url("icons/text.svg");
                     active: root.active-tool == "text";
                     enabled: root.has-document;
                     clicked => { root.set-tool("text"); }
+                }
+
+                // Style controls — only visible in edit mode when annotation selected or drawing tool active
+                if root.edit-mode && (root.has-selection || root.active-tool != "select"): Rectangle { width: 1px; height: 28px; background: #555; }
+
+                if root.edit-mode && (root.has-selection || root.active-tool != "select"): HorizontalLayout {
+                    spacing: 2px;
+
+                    for col in [
+                        {r: 255, g: 0,   b: 0},
+                        {r: 0,   g: 0,   b: 255},
+                        {r: 0,   g: 150, b: 0},
+                        {r: 255, g: 165, b: 0},
+                        {r: 128, g: 0,   b: 128},
+                        {r: 0,   g: 0,   b: 0},
+                        {r: 100, g: 100, b: 100},
+                        {r: 255, g: 255, b: 255},
+                    ]: Rectangle {
+                        width: 18px;
+                        height: 18px;
+                        border-radius: 9px;
+                        background: Colors.rgb(col.r, col.g, col.b);
+                        border-color: col.r == root.cur-r && col.g == root.cur-g && col.b == root.cur-b ? #4d9eff : #666;
+                        border-width: col.r == root.cur-r && col.g == root.cur-g && col.b == root.cur-b ? 2px : 1px;
+                        TouchArea {
+                            clicked => { root.set-color(col.r, col.g, col.b); }
+                            mouse-cursor: pointer;
+                        }
+                    }
+                }
+
+                // Stroke width for rect/circle
+                if root.selection-type == "rect" || root.selection-type == "circle" || root.active-tool == "rect" || root.active-tool == "circle": HorizontalLayout {
+                    spacing: 4px;
+                    Rectangle { width: 2px; }
+                    Text { text: "W:"; color: #aaa; vertical-alignment: center; }
+                    SpinBox {
+                        width: 75px;
+                        height: 28px;
+                        minimum: 1;
+                        maximum: 20;
+                        value: root.cur-stroke-width;
+                        edited(val) => { root.set-stroke-width(val); }
+                    }
+                }
+
+                // Font size for text
+                if root.selection-type == "text" || root.active-tool == "text": HorizontalLayout {
+                    spacing: 4px;
+                    Rectangle { width: 2px; }
+                    Text { text: "Sz:"; color: #aaa; vertical-alignment: center; }
+                    SpinBox {
+                        width: 75px;
+                        height: 28px;
+                        minimum: 6;
+                        maximum: 72;
+                        value: root.cur-font-size;
+                        edited(val) => { root.set-font-size(val); }
+                    }
                 }
 
                 // Spacer
@@ -296,32 +389,15 @@ export component App inherits Window {
                                 vertical-alignment: center;
                             }
 
-                            // Drawing preview overlay
-                            if root.drawing && root.drawing-page == page-data.page-num: Rectangle {
-                                x: root.draw-x * 1px;
-                                y: root.draw-y * 1px;
-                                width: root.draw-w * 1px;
-                                height: root.draw-h * 1px;
-                                border-color: #ff0000;
-                                border-width: 2px;
-                                background: transparent;
-                                border-radius: root.active-tool == "circle" ? self.width / 2 : 0;
-                            }
-
-                            // Selection box overlay
-                            if root.has-selection && root.selection-page == page-data.page-num: Rectangle {
-                                x: root.sel-x * 1px - 4px;
-                                y: root.sel-y * 1px - 4px;
-                                width: root.sel-w * 1px + 8px;
-                                height: root.sel-h * 1px + 8px;
-                                border-color: #4d9eff;
-                                border-width: 1.5px;
-                                background: transparent;
-                            }
-
-                            // Pointer event capture for annotation interaction
+                            // Single full-page TouchArea that handles everything.
+                            // Must be FIRST so it captures all events, then visual
+                            // overlays are painted on top (they have no TouchArea).
                             page-ta := TouchArea {
-                                mouse-cursor: root.active-tool == "select" ? default : crosshair;
+                                enabled: root.edit-mode;
+                                mouse-cursor: !root.edit-mode ? default :
+                                    root.active-tool == "select" ?
+                                    (root.resizing ? default : (root.has-selection && root.selection-page == page-data.page-num ? move : default)) :
+                                    crosshair;
                                 pointer-event(evt) => {
                                     if evt.kind == PointerEventKind.down && evt.button == PointerEventButton.left {
                                         if root.active-tool == "select" {
@@ -331,16 +407,58 @@ export component App inherits Window {
                                         }
                                     }
                                     if evt.kind == PointerEventKind.up && evt.button == PointerEventButton.left {
-                                        if root.active-tool != "select" {
+                                        if root.resizing {
+                                            root.resize-end();
+                                        } else if root.active-tool == "select" {
+                                            root.page-drag-end(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
+                                        } else {
                                             root.page-pointer-up(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
                                         }
                                     }
                                 }
                                 moved => {
-                                    if self.pressed && root.active-tool != "select" {
-                                        root.page-pointer-move(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
+                                    if self.pressed {
+                                        if root.resizing {
+                                            root.resize-move(self.mouse-x / 1px, self.mouse-y / 1px);
+                                        } else if root.active-tool == "select" {
+                                            root.page-drag-move(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
+                                        } else {
+                                            root.page-pointer-move(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
+                                        }
                                     }
                                 }
+                            }
+
+                            // Drawing preview overlay
+                            if root.drawing && root.drawing-page == page-data.page-num: Rectangle {
+                                x: root.draw-x * 1px;
+                                y: root.draw-y * 1px;
+                                width: root.draw-w * 1px;
+                                height: root.draw-h * 1px;
+                                border-color: Colors.rgb(root.cur-r, root.cur-g, root.cur-b);
+                                border-width: max(1px, root.cur-stroke-width * 1px);
+                                background: transparent;
+                                border-radius: root.active-tool == "circle" ? self.width / 2 : 0;
+                            }
+
+                            // Selection box + handles (visual only, no TouchArea)
+                            if root.edit-mode && root.has-selection && root.selection-page == page-data.page-num: Rectangle {
+                                x: root.sel-x * 1px - 5px;
+                                y: root.sel-y * 1px - 5px;
+                                width: root.sel-w * 1px + 10px;
+                                height: root.sel-h * 1px + 10px;
+                                border-color: #4d9eff;
+                                border-width: 1.5px;
+                                background: transparent;
+
+                                // NW
+                                Rectangle { x: -3px; y: -3px; width: 8px; height: 8px; background: white; border-color: #4d9eff; border-width: 1px; }
+                                // NE
+                                Rectangle { x: parent.width - 5px; y: -3px; width: 8px; height: 8px; background: white; border-color: #4d9eff; border-width: 1px; }
+                                // SW
+                                Rectangle { x: -3px; y: parent.height - 5px; width: 8px; height: 8px; background: white; border-color: #4d9eff; border-width: 1px; }
+                                // SE
+                                Rectangle { x: parent.width - 5px; y: parent.height - 5px; width: 8px; height: 8px; background: white; border-color: #4d9eff; border-width: 1px; }
                             }
                         }
                     }

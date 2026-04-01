@@ -1,7 +1,7 @@
 use crate::pdf::models::*;
 
 /// Active drawing tool.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Tool {
     Select,
     Rect,
@@ -18,24 +18,26 @@ impl Tool {
             _ => Tool::Select,
         }
     }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Tool::Select => "select",
-            Tool::Rect => "rect",
-            Tool::Circle => "circle",
-            Tool::Text => "text",
-        }
-    }
 }
 
-/// State machine for annotation drawing.
+/// State machine for annotation interaction.
 pub struct InteractionState {
     pub tool: Tool,
+    // Drawing
     pub drawing: bool,
     pub start_page: u32,
-    pub start_x: f32, // canvas pixels
+    pub start_x: f32,
     pub start_y: f32,
+    // Selection
+    pub selected_page: u32,
+    pub selected_idx: Option<usize>,
+    // Dragging (move)
+    pub dragging: bool,
+    pub drag_start_x: f32,
+    pub drag_start_y: f32,
+    pub drag_orig_pdf_x: f64,
+    pub drag_orig_pdf_y: f64,
+    // Style defaults
     pub color: RgbColor,
     pub stroke_width: f64,
     pub font_size: f64,
@@ -49,6 +51,13 @@ impl Default for InteractionState {
             start_page: 0,
             start_x: 0.0,
             start_y: 0.0,
+            selected_page: 0,
+            selected_idx: None,
+            dragging: false,
+            drag_start_x: 0.0,
+            drag_start_y: 0.0,
+            drag_orig_pdf_x: 0.0,
+            drag_orig_pdf_y: 0.0,
             color: RgbColor { r: 255, g: 0, b: 0 },
             stroke_width: 2.0,
             font_size: 14.0,
@@ -56,7 +65,6 @@ impl Default for InteractionState {
     }
 }
 
-/// Convert canvas pixel coords to PDF coords (bottom-left origin, Y-up).
 fn canvas_to_pdf(canvas_x: f32, canvas_y: f32, scale: f32, page_height_pt: f32) -> (f64, f64) {
     let pdf_x = canvas_x as f64 / scale as f64;
     let pdf_y = page_height_pt as f64 - canvas_y as f64 / scale as f64;
@@ -66,14 +74,49 @@ fn canvas_to_pdf(canvas_x: f32, canvas_y: f32, scale: f32, page_height_pt: f32) 
 const MIN_SIZE_PT: f64 = 10.0;
 
 impl InteractionState {
+    pub fn clear_selection(&mut self) {
+        self.selected_idx = None;
+        self.selected_page = 0;
+        self.dragging = false;
+    }
+
     pub fn pointer_down(&mut self, page: u32, x: f32, y: f32) {
         if self.tool == Tool::Select {
-            return; // selection handled separately later
+            return;
         }
         self.drawing = true;
         self.start_page = page;
         self.start_x = x;
         self.start_y = y;
+    }
+
+    /// Start dragging the selected annotation.
+    pub fn start_drag(&mut self, x: f32, y: f32, ann: &Annotation) {
+        self.dragging = true;
+        self.drag_start_x = x;
+        self.drag_start_y = y;
+        let (ox, oy) = ann_pdf_origin(ann);
+        self.drag_orig_pdf_x = ox;
+        self.drag_orig_pdf_y = oy;
+    }
+
+    /// Apply drag delta to annotation. Returns true if moved.
+    pub fn apply_drag(
+        &self,
+        x: f32,
+        y: f32,
+        scale: f32,
+        ann: &mut Annotation,
+    ) -> bool {
+        if !self.dragging { return false; }
+        let dx = (x - self.drag_start_x) as f64 / scale as f64;
+        let dy = -(y - self.drag_start_y) as f64 / scale as f64; // Y is flipped
+        set_ann_origin(ann, self.drag_orig_pdf_x + dx, self.drag_orig_pdf_y + dy);
+        true
+    }
+
+    pub fn end_drag(&mut self) {
+        self.dragging = false;
     }
 
     /// Finish drawing and return a new annotation, or None if too small.
@@ -144,5 +187,25 @@ impl InteractionState {
             }
             Tool::Select => None,
         }
+    }
+}
+
+/// Get the PDF origin (x, y) of an annotation.
+fn ann_pdf_origin(ann: &Annotation) -> (f64, f64) {
+    match ann {
+        Annotation::Rect(r) => (r.x, r.y),
+        Annotation::Circle(c) => (c.x, c.y),
+        Annotation::Text(t) => (t.x, t.y),
+        Annotation::Signature(s) => (s.x, s.y),
+    }
+}
+
+/// Set the PDF origin (x, y) of an annotation.
+pub fn set_ann_origin(ann: &mut Annotation, x: f64, y: f64) {
+    match ann {
+        Annotation::Rect(r) => { r.x = x; r.y = y; }
+        Annotation::Circle(c) => { c.x = x; c.y = y; }
+        Annotation::Text(t) => { t.x = x; t.y = y; }
+        Annotation::Signature(s) => { s.x = x; s.y = y; }
     }
 }
