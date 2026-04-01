@@ -960,6 +960,208 @@ pub fn setup(ui: &App) {
         });
     }
 
+    // ── Signature ─────────────────────────────────────────────────────────────
+    {
+        // High-res canvas (2x the display size for crisp rendering)
+        const SIG_W: u32 = 960;
+        const SIG_H: u32 = 360;
+        // Scale factor: Slint modal draws at ~480x180, canvas is 2x
+        const SIG_SCALE: f32 = 2.0;
+
+        let sig_pixmap: std::rc::Rc<std::cell::RefCell<tiny_skia::Pixmap>> =
+            std::rc::Rc::new(std::cell::RefCell::new(tiny_skia::Pixmap::new(SIG_W, SIG_H).unwrap()));
+        let sig_b64: std::rc::Rc<std::cell::RefCell<Option<String>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(None));
+        let sig_draw_count: std::rc::Rc<std::cell::Cell<u32>> =
+            std::rc::Rc::new(std::cell::Cell::new(0));
+        // Store all stroke points for smooth re-rendering
+        // Each stroke is a Vec of (x, y) in high-res canvas coords
+        let sig_strokes: std::rc::Rc<std::cell::RefCell<Vec<Vec<(f32, f32)>>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+
+        {
+            let ui_weak = ui.as_weak();
+            let sig_pixmap = sig_pixmap.clone();
+            let sig_strokes = sig_strokes.clone();
+            ui.on_open_signature_modal(move || {
+                let ui = ui_weak.unwrap();
+                let mut pm = sig_pixmap.borrow_mut();
+                *pm = tiny_skia::Pixmap::new(SIG_W, SIG_H).unwrap();
+                sig_strokes.borrow_mut().clear();
+                update_sig_image(&ui, &pm);
+                ui.set_show_signature_modal(true);
+            });
+        }
+        {
+            let ui_weak = ui.as_weak();
+            let sig_pixmap = sig_pixmap.clone();
+            let sig_draw_count = sig_draw_count.clone();
+            let sig_strokes = sig_strokes.clone();
+            ui.on_sig_draw(move |x1, y1, x2, y2| {
+                let mut pm = sig_pixmap.borrow_mut();
+
+                let sx2 = x2 * SIG_SCALE;
+                let sy2 = y2 * SIG_SCALE;
+                let sx1 = x1 * SIG_SCALE;
+                let sy1 = y1 * SIG_SCALE;
+
+                // Collect point for smooth re-rendering later
+                {
+                    let mut strokes = sig_strokes.borrow_mut();
+                    if strokes.is_empty() || strokes.last().map_or(true, |s| s.is_empty()) {
+                        strokes.push(vec![(sx1, sy1)]);
+                    }
+                    if let Some(current) = strokes.last_mut() {
+                        current.push((sx2, sy2));
+                    }
+                }
+
+                // Draw rough preview line
+                let dx = sx2 - sx1;
+                let dy = sy2 - sy1;
+                let angle = dy.atan2(dx);
+                let nib_angle = std::f32::consts::FRAC_PI_4;
+                let cross = (angle - nib_angle).sin().abs();
+                let width = 1.5 + cross * 5.0;
+
+                let mut paint = tiny_skia::Paint::default();
+                paint.set_color(tiny_skia::Color::from_rgba8(15, 15, 35, 255));
+                paint.anti_alias = true;
+                let stroke = tiny_skia::Stroke {
+                    width,
+                    line_cap: tiny_skia::LineCap::Round,
+                    line_join: tiny_skia::LineJoin::Round,
+                    ..tiny_skia::Stroke::default()
+                };
+                let mut pb = tiny_skia::PathBuilder::new();
+                pb.move_to(sx1, sy1);
+                pb.line_to(sx2, sy2);
+                if let Some(path) = pb.finish() {
+                    pm.stroke_path(&path, &paint, &stroke, tiny_skia::Transform::identity(), None);
+                }
+
+                let count = sig_draw_count.get() + 1;
+                sig_draw_count.set(count);
+                if count % 3 == 0 {
+                    update_sig_image(&ui_weak.unwrap(), &pm);
+                }
+            });
+        }
+        {
+            let ui_weak = ui.as_weak();
+            let sig_pixmap = sig_pixmap.clone();
+            let sig_strokes = sig_strokes.clone();
+            ui.on_sig_draw_end(move || {
+                let ui = ui_weak.unwrap();
+                // Mark end of current stroke
+                sig_strokes.borrow_mut().push(Vec::new());
+                // Re-render all strokes with smooth Bezier curves
+                let mut pm = sig_pixmap.borrow_mut();
+                *pm = tiny_skia::Pixmap::new(SIG_W, SIG_H).unwrap();
+                render_smooth_strokes(&mut pm, &sig_strokes.borrow());
+                update_sig_image(&ui, &pm);
+            });
+        }
+        {
+            let ui_weak = ui.as_weak();
+            let sig_pixmap = sig_pixmap.clone();
+            let sig_strokes = sig_strokes.clone();
+            ui.on_sig_clear(move || {
+                let ui = ui_weak.unwrap();
+                let mut pm = sig_pixmap.borrow_mut();
+                *pm = tiny_skia::Pixmap::new(SIG_W, SIG_H).unwrap();
+                sig_strokes.borrow_mut().clear();
+                update_sig_image(&ui, &pm);
+            });
+        }
+        {
+            let ui_weak = ui.as_weak();
+            let sig_pixmap = sig_pixmap.clone();
+            ui.on_sig_upload(move || {
+                let ui = ui_weak.unwrap();
+                let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Images", &["png", "jpg", "jpeg"])
+                    .pick_file()
+                else { return };
+                if let Ok(img) = image::open(&path) {
+                    let resized = img.resize(SIG_W, SIG_H, image::imageops::FilterType::Lanczos3);
+                    let rgba = resized.to_rgba8();
+                    let (w, h) = rgba.dimensions();
+                    let mut pm = sig_pixmap.borrow_mut();
+                    *pm = tiny_skia::Pixmap::new(SIG_W, SIG_H).unwrap();
+                    if let Some(src) = tiny_skia::Pixmap::from_vec(
+                        rgba.into_raw(), tiny_skia::IntSize::from_wh(w, h).unwrap(),
+                    ) {
+                        let dx = ((SIG_W - w) / 2) as i32;
+                        let dy = ((SIG_H - h) / 2) as i32;
+                        pm.draw_pixmap(dx, dy, src.as_ref(), &tiny_skia::PixmapPaint::default(), tiny_skia::Transform::identity(), None);
+                    }
+                    update_sig_image(&ui, &pm);
+                }
+            });
+        }
+        {
+            let ui_weak = ui.as_weak();
+            let sig_pixmap = sig_pixmap.clone();
+            let sig_b64 = sig_b64.clone();
+            ui.on_sig_place(move || {
+                let ui = ui_weak.unwrap();
+                let pm = sig_pixmap.borrow();
+                // Flush final image
+                update_sig_image(&ui, &pm);
+                let has_content = pm.data().chunks(4).any(|px| px[3] > 0);
+                if !has_content { return; }
+                let img = image::RgbaImage::from_raw(SIG_W, SIG_H, pm.data().to_vec()).unwrap();
+                let mut png_buf: Vec<u8> = Vec::new();
+                image::DynamicImage::ImageRgba8(img)
+                    .write_to(&mut std::io::Cursor::new(&mut png_buf), image::ImageFormat::Png)
+                    .unwrap();
+                let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png_buf);
+                *sig_b64.borrow_mut() = Some(b64);
+                ui.set_show_signature_modal(false);
+                ui.set_sig_placing(true);
+            });
+        }
+        {
+            let ui_weak = ui.as_weak();
+            ui.on_sig_cancel(move || {
+                ui_weak.unwrap().set_show_signature_modal(false);
+            });
+        }
+        {
+            let ui_weak = ui.as_weak();
+            let pdfium = pdfium.clone();
+            let state = state.clone();
+            let sig_b64 = sig_b64.clone();
+            ui.on_sig_click_on_page(move |page, x, y| {
+                let ui = ui_weak.unwrap();
+                ui.set_sig_placing(false);
+                let Some(b64) = sig_b64.borrow_mut().take() else { return };
+                let mut s = state.lock().unwrap();
+                let page_idx = (page - 1) as usize;
+                let page_height_pt = s.page_dims.get(page_idx)
+                    .map(|d| if s.rotation == 90 || s.rotation == 270 { d.width_pt } else { d.height_pt })
+                    .unwrap_or(841.0);
+                let scale = s.scale;
+                let pdf_x = x as f64 / scale as f64;
+                let pdf_y = page_height_pt as f64 - y as f64 / scale as f64;
+                let ann = crate::pdf::models::Annotation::Signature(
+                    crate::pdf::models::SignatureAnnotation {
+                        page: page as u32,
+                        x: pdf_x - 75.0,
+                        y: pdf_y - 30.0,
+                        width: 150.0,
+                        height: 60.0,
+                        image_data: b64,
+                    },
+                );
+                s.annotations.add(ann);
+                s.dirty = true;
+                update_ui(&pdfium, &s, &ui);
+            });
+        }
+    }
+
     // ── Save As ──────────────────────────────────────────────────────────────
     {
         let ui_weak = ui.as_weak();
@@ -1189,6 +1391,63 @@ fn ann_type_str(ann: &crate::pdf::models::Annotation) -> &'static str {
         crate::pdf::models::Annotation::Text(_) => "text",
         crate::pdf::models::Annotation::Signature(_) => "signature",
     }
+}
+
+/// Re-render all strokes using Catmull-Rom spline interpolation for smooth curves.
+fn render_smooth_strokes(pixmap: &mut tiny_skia::Pixmap, strokes: &[Vec<(f32, f32)>]) {
+    let mut paint = tiny_skia::Paint::default();
+    paint.set_color(tiny_skia::Color::from_rgba8(15, 15, 35, 255));
+    paint.anti_alias = true;
+
+    for points in strokes {
+        if points.len() < 2 { continue; }
+
+        // For each consecutive pair of points, compute Catmull-Rom control points
+        // and draw a cubic Bezier curve with calligraphic width
+        let n = points.len();
+        for i in 0..n - 1 {
+            let p0 = if i > 0 { points[i - 1] } else { points[i] };
+            let p1 = points[i];
+            let p2 = points[i + 1];
+            let p3 = if i + 2 < n { points[i + 2] } else { points[i + 1] };
+
+            // Catmull-Rom to cubic Bezier control points
+            let cp1x = p1.0 + (p2.0 - p0.0) / 6.0;
+            let cp1y = p1.1 + (p2.1 - p0.1) / 6.0;
+            let cp2x = p2.0 - (p3.0 - p1.0) / 6.0;
+            let cp2y = p2.1 - (p3.1 - p1.1) / 6.0;
+
+            // Calligraphic width based on angle
+            let dx = p2.0 - p1.0;
+            let dy = p2.1 - p1.1;
+            let angle = dy.atan2(dx);
+            let nib_angle = std::f32::consts::FRAC_PI_4;
+            let cross = (angle - nib_angle).sin().abs();
+            let width = 1.5 + cross * 5.0;
+
+            let stroke = tiny_skia::Stroke {
+                width,
+                line_cap: tiny_skia::LineCap::Round,
+                line_join: tiny_skia::LineJoin::Round,
+                ..tiny_skia::Stroke::default()
+            };
+
+            let mut pb = tiny_skia::PathBuilder::new();
+            pb.move_to(p1.0, p1.1);
+            pb.cubic_to(cp1x, cp1y, cp2x, cp2y, p2.0, p2.1);
+            if let Some(path) = pb.finish() {
+                pixmap.stroke_path(&path, &paint, &stroke, tiny_skia::Transform::identity(), None);
+            }
+        }
+    }
+}
+
+fn update_sig_image(ui: &App, pixmap: &tiny_skia::Pixmap) {
+    let w = pixmap.width();
+    let h = pixmap.height();
+    let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(w, h);
+    buf.make_mut_bytes().copy_from_slice(pixmap.data());
+    ui.set_sig_canvas_image(Image::from_rgba8(buf));
 }
 
 fn save_annotated_pdf(

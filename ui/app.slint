@@ -178,6 +178,20 @@ export component App inherits Window {
     // Text input dialog
     callback text-input-submit(string);
     callback text-input-cancel();
+    // Signature
+    callback open-signature-modal();
+    callback sig-draw(float, float, float, float);  // from-x, from-y, to-x, to-y
+    callback sig-draw-end();
+    callback sig-clear();
+    callback sig-place();
+    callback sig-upload();
+    callback sig-cancel();
+    callback sig-click-on-page(int, float, float);  // page, x, y
+    in-out property <bool> show-signature-modal: false;
+    in-out property <image> sig-canvas-image;
+    in-out property <bool> sig-placing: false;  // waiting for click on page
+    in-out property <float> sig-cursor-x: 0;
+    in-out property <float> sig-cursor-y: 0;
     in-out property <bool> show-text-input: false;
     in-out property <string> text-input-value: "";
     callback set-stroke-width(int);
@@ -382,6 +396,12 @@ export component App inherits Window {
                     clicked => { root.set-tool("text"); }
                 }
 
+                if root.edit-mode: IconButton {
+                    icon: @image-url("icons/signature.svg");
+                    enabled: root.has-document;
+                    clicked => { root.open-signature-modal(); }
+                }
+
                 // Style controls — only visible in edit mode when annotation selected or drawing tool active
                 if root.edit-mode && (root.has-selection || root.active-tool != "select"): Rectangle { width: 1px; height: 28px; background: #555; }
 
@@ -483,14 +503,16 @@ export component App inherits Window {
                             // Must be FIRST so it captures all events, then visual
                             // overlays are painted on top (they have no TouchArea).
                             page-ta := TouchArea {
-                                enabled: root.edit-mode;
-                                mouse-cursor: !root.edit-mode ? default :
+                                enabled: root.edit-mode || root.sig-placing;
+                                mouse-cursor: root.sig-placing ? crosshair : (!root.edit-mode ? default :
                                     root.active-tool == "select" ?
                                     (root.resizing ? default : (root.has-selection && root.selection-page == page-data.page-num ? move : default)) :
-                                    crosshair;
+                                    crosshair);
                                 pointer-event(evt) => {
                                     if evt.kind == PointerEventKind.down && evt.button == PointerEventButton.left {
-                                        if root.active-tool == "select" {
+                                        if root.sig-placing {
+                                            root.sig-click-on-page(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
+                                        } else if root.active-tool == "select" {
                                             root.page-click(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
                                         } else {
                                             root.page-pointer-down(page-data.page-num, self.mouse-x / 1px, self.mouse-y / 1px);
@@ -507,6 +529,10 @@ export component App inherits Window {
                                     }
                                 }
                                 moved => {
+                                    if root.sig-placing {
+                                        root.sig-cursor-x = self.mouse-x / 1px;
+                                        root.sig-cursor-y = self.mouse-y / 1px;
+                                    }
                                     if self.pressed {
                                         if root.resizing {
                                             root.resize-move(self.mouse-x / 1px, self.mouse-y / 1px);
@@ -517,6 +543,17 @@ export component App inherits Window {
                                         }
                                     }
                                 }
+                            }
+
+                            // Signature placement preview (follows cursor)
+                            if root.sig-placing: Image {
+                                x: root.sig-cursor-x * 1px - 75px;
+                                y: root.sig-cursor-y * 1px - 30px;
+                                width: 150px;
+                                height: 60px;
+                                source: root.sig-canvas-image;
+                                image-fit: fill;
+                                opacity: 0.7;
                             }
 
                             // Drawing preview overlay
@@ -614,6 +651,103 @@ export component App inherits Window {
                         text: "OK";
                         clicked => {
                             root.text-input-submit(text-edit.text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Signature modal ──
+    if root.show-signature-modal: Rectangle {
+        background: #00000088;
+        TouchArea { clicked => { root.sig-cancel(); } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 520px;
+            height: 300px;
+            background: #2d2d2d;
+            border-radius: 8px;
+            border-color: #555;
+            border-width: 1px;
+
+            TouchArea { /* block click-through */ }
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+
+                Text {
+                    text: "Draw your signature:";
+                    color: #cccccc;
+                    font-size: 14px;
+                }
+
+                // Drawing area
+                Rectangle {
+                    height: 180px;
+                    background: white;
+                    border-radius: 4px;
+                    border-color: #888;
+                    border-width: 1px;
+
+                    Image {
+                        width: parent.width;
+                        height: parent.height;
+                        source: root.sig-canvas-image;
+                        image-fit: fill;
+                    }
+
+                    sig-ta := TouchArea {
+                        mouse-cursor: crosshair;
+                        property <float> prev-x: 0;
+                        property <float> prev-y: 0;
+                        pointer-event(evt) => {
+                            if evt.kind == PointerEventKind.down {
+                                self.prev-x = self.mouse-x / 1px;
+                                self.prev-y = self.mouse-y / 1px;
+                            }
+                            if evt.kind == PointerEventKind.up {
+                                root.sig-draw-end();
+                            }
+                        }
+                        moved => {
+                            if self.pressed {
+                                root.sig-draw(self.prev-x, self.prev-y, self.mouse-x / 1px, self.mouse-y / 1px);
+                                self.prev-x = self.mouse-x / 1px;
+                                self.prev-y = self.mouse-y / 1px;
+                            }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    alignment: space-between;
+                    spacing: 8px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Button {
+                            text: "Clear";
+                            clicked => { root.sig-clear(); }
+                        }
+                        Button {
+                            text: "Upload Image";
+                            clicked => { root.sig-upload(); }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Button {
+                            text: "Cancel";
+                            clicked => { root.sig-cancel(); }
+                        }
+                        Button {
+                            text: "Place";
+                            clicked => { root.sig-place(); }
                         }
                     }
                 }
