@@ -1,5 +1,32 @@
 import { VerticalBox, HorizontalBox, Button, ScrollView, LineEdit, Spinner } from "std-widgets.slint";
 
+component IconButton inherits Rectangle {
+    in property <image> icon;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    background: ta.has-hover && root.enabled ? #444 : transparent;
+
+    Image {
+        width: 16px;
+        height: 16px;
+        source: root.icon;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        opacity: root.enabled ? 1.0 : 0.3;
+        colorize: #cccccc;
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+        mouse-cursor: root.enabled ? pointer : default;
+    }
+}
+
 // Data model for a single page image in the viewer
 export struct PageData {
     image: image,
@@ -11,8 +38,8 @@ export struct PageData {
 
 export component App inherits Window {
     title: "PDF Rider";
-    width: 1280px;
-    height: 800px;
+    preferred-width: 1280px;
+    preferred-height: 800px;
     background: #1e1e1e;
 
     // Callbacks exposed to Rust
@@ -46,8 +73,7 @@ export component App inherits Window {
     }
     out property <float> current-scroll-y: -viewer-scroll.viewport-y / 1px;
 
-    VerticalBox {
-        padding: 0;
+    VerticalLayout {
         spacing: 0;
 
         // ── Toolbar ──
@@ -55,30 +81,34 @@ export component App inherits Window {
             height: 40px;
             background: #2d2d2d;
 
-            HorizontalBox {
+            HorizontalLayout {
                 padding-left: 8px;
                 padding-right: 8px;
                 spacing: 4px;
                 alignment: start;
+                // Center children vertically in the 40px bar
+                padding-top: 6px;
+                padding-bottom: 6px;
 
                 // Open
-                Button {
-                    text: "Open";
+                IconButton {
+                    icon: @image-url("icons/open.svg");
                     clicked => { root.open-file(); }
                 }
 
                 // Separator
-                Rectangle { width: 1px; background: #555; }
+                Rectangle { width: 1px; height: 28px; background: #555; }
 
                 // Page navigation
-                Button {
-                    text: "\u{25C0}";
+                IconButton {
+                    icon: @image-url("icons/page-up.svg");
                     enabled: root.current-page > 1;
                     clicked => { root.page-prev(); }
                 }
 
                 page-input := LineEdit {
                     width: 50px;
+                    height: 28px;
                     text: root.page-text;
                     accepted(text) => {
                         root.page-goto(text.to-float());
@@ -91,22 +121,22 @@ export component App inherits Window {
                     vertical-alignment: center;
                 }
 
-                Button {
-                    text: "\u{25B6}";
+                IconButton {
+                    icon: @image-url("icons/page-down.svg");
                     enabled: root.current-page < root.page-count;
                     clicked => { root.page-next(); }
                 }
 
                 // Separator
-                Rectangle { width: 1px; background: #555; }
+                Rectangle { width: 1px; height: 28px; background: #555; }
 
                 // Zoom controls
-                Button {
-                    text: "\u{2212}";
+                IconButton {
+                    icon: @image-url("icons/zoom-out.svg");
                     clicked => { root.zoom-out(); }
                 }
 
-                zoom-display := Text {
+                Text {
                     text: root.zoom-text;
                     color: #cccccc;
                     vertical-alignment: center;
@@ -114,26 +144,26 @@ export component App inherits Window {
                     horizontal-alignment: center;
                 }
 
-                Button {
-                    text: "+";
+                IconButton {
+                    icon: @image-url("icons/zoom-in.svg");
                     clicked => { root.zoom-in(); }
                 }
 
-                Button {
-                    text: "FW";
+                IconButton {
+                    icon: @image-url("icons/fit-width.svg");
                     clicked => { root.fit-width(); }
                 }
 
-                Button {
-                    text: "FH";
+                IconButton {
+                    icon: @image-url("icons/fit-height.svg");
                     clicked => { root.fit-height(); }
                 }
 
                 // Separator
-                Rectangle { width: 1px; background: #555; }
+                Rectangle { width: 1px; height: 28px; background: #555; }
 
-                Button {
-                    text: "\u{21BB}";
+                IconButton {
+                    icon: @image-url("icons/rotate.svg");
                     clicked => { root.rotate(); }
                 }
 
@@ -151,39 +181,39 @@ export component App inherits Window {
         }
 
         // ── PDF Viewer Area ──
-        viewer-scroll := ScrollView {
-            visible: root.has-document;
+        Rectangle {
+            viewer-scroll := ScrollView {
+                visible: root.has-document;
 
-            VerticalLayout {
-                spacing: 8px;
+                VerticalLayout {
+                    spacing: 8px;
 
-                for page-data in root.pages: HorizontalLayout {
-                    alignment: center;
+                    for page-data in root.pages: HorizontalLayout {
+                        alignment: center;
 
-                    Rectangle {
-                        width: page-data.width;
-                        height: page-data.height;
-                        background: page-data.rendered ? #ffffff : #333333;
+                        Rectangle {
+                            width: page-data.width;
+                            height: page-data.height;
+                            background: page-data.rendered ? #ffffff : #333333;
 
-                        if page-data.rendered: Image {
-                            width: parent.width;
-                            height: parent.height;
-                            source: page-data.image;
-                            image-fit: fill;
-                        }
-                        if !page-data.rendered: Text {
-                            text: "Page \{page-data.page-num}";
-                            color: #666666;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                            if page-data.rendered: Image {
+                                width: parent.width;
+                                height: parent.height;
+                                source: page-data.image;
+                                image-fit: fill;
+                            }
+                            if !page-data.rendered: Text {
+                                text: "Page \{page-data.page-num}";
+                                color: #666666;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
                         }
                     }
                 }
             }
-        }
 
-        if !root.has-document: Rectangle {
-            Text {
+            if !root.has-document: Text {
                 text: "Drop a PDF file here or click Open";
                 color: #888888;
                 font-size: 16px;
