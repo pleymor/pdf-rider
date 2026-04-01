@@ -125,6 +125,10 @@ export class PdfPageView {
       this.canvas.style.height = `${viewport.height}px`;
       this.canvas.getContext("2d")!.drawImage(buf, 0, 0);
 
+      // Release off-screen buffer memory immediately.
+      buf.width = 1;
+      buf.height = 1;
+
       // Size annotation canvas (no content to preserve here).
       this.annotationCanvas.width  = viewport.width;
       this.annotationCanvas.height = viewport.height;
@@ -156,8 +160,12 @@ export class PdfPageView {
 
   /** Remove rendered content while preserving placeholder dimensions. */
   clear(): void {
-    const ctx = this.canvas.getContext("2d");
-    if (ctx) ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    // Reset canvas dimensions to 1×1 to actually release the bitmap memory
+    // (clearRect alone keeps the full-resolution bitmap allocated).
+    this.canvas.width  = 1;
+    this.canvas.height = 1;
+    this.annotationCanvas.width  = 1;
+    this.annotationCanvas.height = 1;
     this.textLayer.innerHTML  = "";
     this.linkLayer.innerHTML  = "";
     this.formLayer.innerHTML  = "";

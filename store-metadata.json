@@ -1,0 +1,55 @@
+{
+  "applicationCategory": "UtilitiesAndTools",
+  "pricing": "Free",
+  "freeTrial": "NoFreeTrial",
+  "markets": ["US", "FR", "DE", "GB", "ES", "IT", "CA", "AU", "JP", "BR", "IN", "KR", "NL", "BE", "CH", "PT", "MX"],
+  "ageRatings": {
+    "target": "NotSet"
+  },
+  "listings": {
+    "en-us": {
+      "baseListing": {
+        "title": "PDF Rider",
+        "description": "A fast, lightweight, open-source PDF reader for Windows.\nRead, annotate, sign, fill forms, and compress — all in a single 5 MB portable app. No bloat. No subscription. No telemetry.\n\nRead\n- Crisp rendering powered by PDF.js at any zoom level\n- Page navigation with keyboard shortcuts and page number input\n- Zoom controls: fit to width, fit to height, snap levels, or type any percentage\n- Rotate pages 90 degrees\n- Drag and drop to open files\n\nAnnotate\n- Text annotations with bold, italic, underline, size, color, alignment\n- Shape annotations: rectangles and circles with stroke color\n- Freehand signature or insert a signature image\n- Layer management: bring to front / send to back\n- Annotations are saved as PDF metadata and fully re-editable on reopen\n\nFill forms\n- Interactive form support: text fields, checkboxes, radio buttons\n- Keyboard navigation between fields (Tab / arrow keys)\n- Filled values are saved back into the PDF\n\nCompress\n- Three quality presets: Screen (smallest), Ebook (balanced), Print (high quality)\n- Typical result: 35% size reduction with no visible quality loss\n\n20 languages\n- Switch instantly in Settings, no restart required\n- English, French, Chinese, Hindi, Spanish, Arabic, Bengali, Russian, Portuguese, Urdu, Indonesian, German, Japanese, Swahili, Marathi, Telugu, Turkish, Tamil, Vietnamese, Korean\n\nWindows integration\n- Set as default PDF handler directly from the app\n- Print from the command line\n- No installer required",
+        "shortDescription": "Fast, lightweight PDF reader with annotations, signatures, forms, and compression",
+        "releaseNotes": "Version 0.2.20:\n- Microsoft Store release\n- MSIX packaging",
+        "features": [
+          "Read, annotate, sign, fill forms, compress",
+          "5 MB portable app, no installer needed",
+          "20 languages built-in",
+          "Annotations saved and re-editable",
+          "Set as default PDF handler"
+        ],
+        "keywords": [
+          "pdf reader",
+          "pdf viewer",
+          "pdf editor",
+          "pdf annotate",
+          "pdf signature"
+        ]
+      }
+    },
+    "fr-fr": {
+      "baseListing": {
+        "title": "PDF Rider",
+        "description": "Un lecteur PDF rapide, leger et open-source pour Windows.\nLisez, annotez, signez, remplissez des formulaires et compressez — le tout dans une seule application portable de 5 Mo. Pas de bloat. Pas d'abonnement. Pas de telemetrie.\n\nLecture\n- Rendu net propulse par PDF.js a tout niveau de zoom\n- Navigation par raccourcis clavier et numero de page\n- Zoom : ajuster a la largeur, a la hauteur, niveaux predetermine ou pourcentage libre\n- Rotation des pages a 90 degres\n- Glisser-deposer pour ouvrir des fichiers\n\nAnnotation\n- Annotations texte avec gras, italique, souligne, taille, couleur, alignement\n- Formes : rectangles et cercles avec couleur de contour\n- Signature manuscrite ou insertion d'image de signature\n- Gestion des couches : premier plan / arriere-plan\n- Annotations sauvegardees en metadonnees PDF et entierement re-editables\n\nFormulaires\n- Support des formulaires interactifs : champs texte, cases a cocher, boutons radio\n- Navigation clavier entre les champs (Tab / fleches)\n- Valeurs sauvegardees dans le PDF\n\nCompression\n- Trois presets : Ecran (le plus petit), Ebook (equilibre), Impression (haute qualite)\n- Resultat typique : 35% de reduction sans perte visible\n\n20 langues\n- Changement instantane dans les parametres, sans redemarrage\n\nIntegration Windows\n- Definir comme lecteur PDF par defaut depuis l'application\n- Impression en ligne de commande\n- Aucun installeur requis",
+        "shortDescription": "Lecteur PDF rapide et leger avec annotations, signatures, formulaires et compression",
+        "releaseNotes": "Version 0.2.20 :\n- Publication sur le Microsoft Store\n- Packaging MSIX",
+        "features": [
+          "Lire, annoter, signer, formulaires, compresser",
+          "Application portable de 5 Mo, sans installeur",
+          "20 langues integrees",
+          "Annotations sauvegardees et re-editables",
+          "Definir comme lecteur PDF par defaut"
+        ],
+        "keywords": [
+          "lecteur pdf",
+          "visionneuse pdf",
+          "editeur pdf",
+          "annotation pdf",
+          "signature pdf"
+        ]
+      }
+    }
+  }
+}

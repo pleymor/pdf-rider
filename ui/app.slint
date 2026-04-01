@@ -1,0 +1,62 @@
+import { VerticalBox, HorizontalBox, Button, Slider, ComboBox, ScrollView } from "std-widgets.slint";
+
+export component App inherits Window {
+    title: "PDF Rider";
+    width: 1280px;
+    height: 800px;
+    background: #1e1e1e;
+
+    // Callbacks exposed to Rust
+    callback open-file();
+    callback zoom-in();
+    callback zoom-out();
+
+    // Properties bound from Rust
+    in-out property <string> status-text: "No file open";
+    in-out property <image> current-page-image;
+    in-out property <bool> has-document: false;
+
+    VerticalBox {
+        // Toolbar
+        HorizontalBox {
+            height: 40px;
+            padding: 4px;
+            spacing: 4px;
+
+            Button {
+                text: "Open";
+                clicked => { root.open-file(); }
+            }
+            Button {
+                text: "+";
+                clicked => { root.zoom-in(); }
+            }
+            Button {
+                text: "-";
+                clicked => { root.zoom-out(); }
+            }
+            Text {
+                text: root.status-text;
+                color: #cccccc;
+                vertical-alignment: center;
+            }
+        }
+
+        // PDF viewer area
+        if root.has-document: ScrollView {
+            Image {
+                source: root.current-page-image;
+                image-fit: contain;
+            }
+        }
+        if !root.has-document: Rectangle {
+            Text {
+                text: "Drop a PDF file here or click Open";
+                color: #888888;
+                font-size: 16px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

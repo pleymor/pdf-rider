@@ -7,8 +7,13 @@ public/
 # Rust / Tauri
 src-tauri/target/
 src-tauri/gen/
+target/
 *.rs.bk
 *.rlib
+
+# PDFium binary (downloaded separately)
+pdfium.dll
+pdfium-win-x64.tgz
 
 # Environment
 .env

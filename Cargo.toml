@@ -1,0 +1,37 @@
+[package]
+name = "pdf-rider"
+version = "0.3.0"
+description = "A fast, lightweight, open-source PDF reader"
+authors = ["Pleymor"]
+edition = "2021"
+
+[[bin]]
+name = "pdf-rider"
+path = "src/main.rs"
+
+[dependencies]
+slint = "1"
+pdfium-render = "0.8"
+lopdf = "0.39"
+image = { version = "0.25", features = ["png", "jpeg"] }
+tiny-skia = "0.11"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rfd = "0.15"
+arboard = "3"
+rayon = "1.10"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+winapi = { version = "0.3", features = ["winspool", "wingdi"] }
+
+[build-dependencies]
+slint-build = "1"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
