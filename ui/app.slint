@@ -40,6 +40,11 @@ export component App inherits Window {
     // Expose window dimensions to Rust
     out property <float> viewer-width: self.width / 1px;
     out property <float> viewer-height: self.height / 1px;
+    // Scroll control
+    public function scroll-to(y: length) {
+        viewer-scroll.viewport-y = y;
+    }
+    out property <float> current-scroll-y: -viewer-scroll.viewport-y / 1px;
 
     VerticalBox {
         padding: 0;
@@ -146,28 +151,32 @@ export component App inherits Window {
         }
 
         // ── PDF Viewer Area ──
-        if root.has-document: viewer-scroll := ScrollView {
+        viewer-scroll := ScrollView {
+            visible: root.has-document;
+
             VerticalLayout {
-                alignment: center;
                 spacing: 8px;
 
-                for page-data in root.pages: Rectangle {
-                    width: page-data.width;
-                    height: page-data.height;
-                    background: page-data.rendered ? #ffffff : #333333;
-                    horizontal-stretch: 0;
+                for page-data in root.pages: HorizontalLayout {
+                    alignment: center;
 
-                    if page-data.rendered: Image {
-                        width: parent.width;
-                        height: parent.height;
-                        source: page-data.image;
-                        image-fit: fill;
-                    }
-                    if !page-data.rendered: Text {
-                        text: "Page \{page-data.page-num}";
-                        color: #666666;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                    Rectangle {
+                        width: page-data.width;
+                        height: page-data.height;
+                        background: page-data.rendered ? #ffffff : #333333;
+
+                        if page-data.rendered: Image {
+                            width: parent.width;
+                            height: parent.height;
+                            source: page-data.image;
+                            image-fit: fill;
+                        }
+                        if !page-data.rendered: Text {
+                            text: "Page \{page-data.page-num}";
+                            color: #666666;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
                     }
                 }
             }

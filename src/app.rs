@@ -1,6 +1,6 @@
 use crate::{App, PageData};
 use pdfium_render::prelude::*;
-use slint::{ComponentHandle, Image, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
+use slint::{ComponentHandle, Image, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, Timer, TimerMode, VecModel};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -290,11 +290,13 @@ pub fn setup(ui: &App) {
         let state = state.clone();
         ui.on_page_prev(move || {
             let ui = ui_weak.unwrap();
-            let _s = state.lock().unwrap();
+            let s = state.lock().unwrap();
             let cur = ui.get_current_page();
             if cur > 1 {
-                ui.set_current_page(cur - 1);
-                ui.set_page_text((cur - 1).to_string().into());
+                let new_page = cur - 1;
+                ui.set_current_page(new_page);
+                ui.set_page_text(new_page.to_string().into());
+                scroll_to_page(&ui, &s, new_page);
             }
         });
     }
@@ -306,8 +308,10 @@ pub fn setup(ui: &App) {
             let s = state.lock().unwrap();
             let cur = ui.get_current_page();
             if cur < s.page_count as i32 {
-                ui.set_current_page(cur + 1);
-                ui.set_page_text((cur + 1).to_string().into());
+                let new_page = cur + 1;
+                ui.set_current_page(new_page);
+                ui.set_page_text(new_page.to_string().into());
+                scroll_to_page(&ui, &s, new_page);
             }
         });
     }
@@ -320,11 +324,67 @@ pub fn setup(ui: &App) {
             let clamped = page.max(1).min(s.page_count as i32);
             ui.set_current_page(clamped);
             ui.set_page_text(clamped.to_string().into());
+            scroll_to_page(&ui, &s, clamped);
         });
+    }
+
+    // ── Scroll position tracking (poll every 150ms) ─────────────────────────
+    {
+        let ui_weak = ui.as_weak();
+        let state = state.clone();
+        let timer = Timer::default();
+        timer.start(TimerMode::Repeated, std::time::Duration::from_millis(150), move || {
+            let Some(ui) = ui_weak.upgrade() else { return };
+            let s = state.lock().unwrap();
+            if s.page_count == 0 { return; }
+            let scroll_y = ui.get_current_scroll_y();
+            let page = page_at_scroll_y(scroll_y, &s);
+            if page != ui.get_current_page() {
+                ui.set_current_page(page);
+                ui.set_page_text(page.to_string().into());
+            }
+        });
+        // Leak the timer so it lives for the app's lifetime
+        std::mem::forget(timer);
     }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+fn page_at_scroll_y(scroll_y: f32, state: &ViewerState) -> i32 {
+    let gap = 8.0_f32;
+    let mut y = 0.0_f32;
+    for (i, dim) in state.page_dims.iter().enumerate() {
+        let h = if state.rotation == 90 || state.rotation == 270 {
+            dim.width_pt
+        } else {
+            dim.height_pt
+        };
+        let page_h = h * state.scale;
+        if scroll_y < y + page_h * 0.5 {
+            return (i + 1) as i32;
+        }
+        y += page_h + gap;
+    }
+    state.page_count as i32
+}
+
+fn scroll_to_page(ui: &App, state: &ViewerState, page: i32) {
+    let page_idx = (page - 1).max(0) as usize;
+    let gap = 8.0_f32; // matches spacing in .slint
+    let mut y = 0.0_f32;
+    for i in 0..page_idx.min(state.page_dims.len()) {
+        let dim = &state.page_dims[i];
+        let h = if state.rotation == 90 || state.rotation == 270 {
+            dim.width_pt
+        } else {
+            dim.height_pt
+        };
+        y += h * state.scale + gap;
+    }
+    // viewport-y is negative (scrolling down = negative offset)
+    ui.invoke_scroll_to(-y);
+}
 
 fn load_document(pdfium: &Pdfium, path: &std::path::Path) -> Result<Vec<PageDim>, String> {
     let doc = pdfium
