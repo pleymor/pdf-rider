@@ -61,8 +61,29 @@ pub fn detect_text_urls(
         }
     });
 
-    // Build full char vector (keep all chars including hyphens — they may be part of URLs)
-    let all_chars: Vec<char> = indexed.iter().map(|(_, ch)| ch.ch).collect();
+    // Build char vector, inserting spaces at line breaks so URLs don't bleed across lines
+    let mut all_chars: Vec<char> = Vec::with_capacity(indexed.len() * 2);
+    let mut all_indexed: Vec<(usize, &super::text_selection::CharBox)> = Vec::with_capacity(indexed.len() * 2);
+    for (i, &(orig_i, cb)) in indexed.iter().enumerate() {
+        // Detect line break: if previous char is on a different line, insert space
+        if i > 0 {
+            let prev_cy = (indexed[i - 1].1.top + indexed[i - 1].1.bottom) / 2.0;
+            let cur_cy = (cb.top + cb.bottom) / 2.0;
+            let line_h = cb.bottom - cb.top;
+            if line_h > 0.0 && (cur_cy - prev_cy).abs() > line_h * 0.4 {
+                // Line break — check if prev char ends a word (not a hyphen continuation)
+                let prev_char = all_chars.last().copied().unwrap_or(' ');
+                if prev_char != ' ' && prev_char != '-' {
+                    all_chars.push(' ');
+                    // Dummy entry for the space (reuse prev char's box)
+                    all_indexed.push(indexed[i - 1]);
+                }
+            }
+        }
+        all_chars.push(cb.ch);
+        all_indexed.push((orig_i, cb));
+    }
+    let indexed = all_indexed;
 
     let mut links = Vec::new();
     let mut search_start = 0;
