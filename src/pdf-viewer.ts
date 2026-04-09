@@ -1,4 +1,5 @@
 import * as pdfjs from "pdfjs-dist";
+import { AnnotationMode } from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from "pdfjs-dist";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -118,7 +119,7 @@ export class PdfPageView {
       buf.height = Math.floor(viewport.height * dpr);
       const bufCtx = buf.getContext("2d")!;
       const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined;
-      await page.render({ canvasContext: bufCtx, viewport, transform }).promise;
+      await page.render({ canvasContext: bufCtx, viewport, transform, annotationMode: AnnotationMode.ENABLE_FORMS }).promise;
 
       // Atomic swap: resize + blit in one synchronous block.
       this.canvas.width  = buf.width;
