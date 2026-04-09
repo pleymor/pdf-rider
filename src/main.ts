@@ -404,13 +404,14 @@ toolbar.on(async (e) => {
       }
       break;
 
-    case "fit-height":
+    case "fit-height": {
       if (viewer.isLoaded()) {
         const scroll = document.getElementById("viewer-scroll")!;
-        await viewer.setScale((scroll.clientHeight - 40) / viewer.pageHeightPt);
+        await viewer.setScale(scroll.clientHeight / viewer.pageHeightPt);
         toolbar.updateZoom(viewer.scale);
       }
       break;
+    }
 
     case "page-prev":
       if (viewer.isLoaded()) viewer.goToPage(viewer.currentPage - viewer.columnCount);
