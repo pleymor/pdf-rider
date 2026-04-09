@@ -526,6 +526,47 @@ pub fn register_print_verb() -> Result<(), String> {
     }
 }
 
+/// Prints a PDF file to a named printer using the system's native PDF handler.
+#[tauri::command]
+pub fn print_pdf_file(file_path: String, printer_name: String, copies: Option<u32>) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        print_pdf_file_impl(file_path, printer_name, copies)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (file_path, printer_name, copies);
+        Err("Printing is only supported on Windows".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn print_pdf_file_impl(file_path: String, printer_name: String, copies: Option<u32>) -> Result<(), String> {
+    use std::ptr;
+
+    let verb: Vec<u16> = "printto\0".encode_utf16().collect();
+    let file: Vec<u16> = format!("{file_path}\0").encode_utf16().collect();
+    let printer: Vec<u16> = format!("{printer_name}\0").encode_utf16().collect();
+
+    let num_copies = copies.unwrap_or(1).max(1);
+    for _ in 0..num_copies {
+        let result = unsafe {
+            winapi::um::shellapi::ShellExecuteW(
+                ptr::null_mut(),
+                verb.as_ptr(),
+                file.as_ptr(),
+                printer.as_ptr(),
+                ptr::null(),
+                0, // SW_HIDE
+            )
+        };
+        if (result as usize) <= 32 {
+            return Err(format!("ShellExecuteW failed with code {}", result as usize));
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {

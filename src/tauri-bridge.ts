@@ -90,6 +90,15 @@ export async function registerPrintVerb(): Promise<void> {
   return invoke<void>("register_print_verb");
 }
 
+/** Extracts selected pages from a PDF into a new file, preserving vector text. */
+export async function extractPdfPages(
+  inputPath: string,
+  outputPath: string,
+  pages: number[],
+): Promise<void> {
+  return invoke<void>("extract_pdf_pages", { inputPath, outputPath, pages });
+}
+
 export interface PrinterList {
   printers: string[];
   defaultPrinter: string;
@@ -98,6 +107,19 @@ export interface PrinterList {
 /** Returns the list of available printers and the default printer name. */
 export async function listPrinters(): Promise<PrinterList> {
   return invoke<PrinterList>("list_printers");
+}
+
+/** Prints a PDF file natively to a named printer via the system handler. */
+export async function printPdfFile(
+  filePath: string,
+  printerName: string,
+  copies?: number,
+): Promise<void> {
+  return invoke<void>("print_pdf_file", {
+    filePath,
+    printerName,
+    copies: copies ?? null,
+  });
 }
 
 /** Sends pre-rendered page images (base64 JPEG) to a printer. */

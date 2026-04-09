@@ -394,14 +394,10 @@ pageManagerModal.onConfirm(async (operations) => {
     const base = await basename(filePath);
     const tmpPath = `${tmp}pdf-rider-pages-${base}`;
 
-    // Persist current state to a TEMP file (not the original)
     const fv: FormFieldValue[] = [...formValues.entries()].map(([name, value]) => ({ name, value }));
     await saveAnnotatedPdf(displayFilePath ?? filePath, tmpPath, store.getAll(), viewer.rotation, fv);
-    // Apply page modifications on the temp file
     await modifyPages(tmpPath, tmpPath, operations);
-    // Reload from the modified temp
     await loadPdf(tmpPath);
-    // Restore original path so Save writes to the real file
     filePath = originalPath;
     setDirty(true);
     showToast("Pages updated.");
