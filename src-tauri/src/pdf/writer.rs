@@ -23,6 +23,24 @@ pub struct AnnotationMeta {
     pub stream_ids: HashMap<u32, [u32; 2]>,
 }
 
+/// Decode a PDF text string (bytes from a /T, /V, etc. entry) into a Rust String.
+/// Handles UTF-16BE (BOM 0xFE 0xFF prefix) and PDFDocEncoding (Latin-1-like fallback).
+fn pdf_text_to_string(bytes: &[u8]) -> Option<String> {
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        // UTF-16BE with BOM
+        let u16s: Vec<u16> = bytes[2..]
+            .chunks_exact(2)
+            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16(&u16s).ok()
+    } else {
+        // Try UTF-8 first; fall back to PDFDocEncoding (≈ Latin-1 for 0x80..0xFF)
+        String::from_utf8(bytes.to_vec()).ok().or_else(|| {
+            Some(bytes.iter().map(|&b| b as char).collect())
+        })
+    }
+}
+
 fn catalog_id(doc: &Document) -> Result<ObjectId, String> {
     doc.trailer
         .get(b"Root")
@@ -545,13 +563,22 @@ pub fn write_form_fields(doc: &mut Document, fields: &[FormFieldValue]) -> Resul
 
     let cat_id = catalog_id(doc)?;
 
-    // Locate the AcroForm — only handles the common case of a referenced dict
+    // Locate the AcroForm — handle both referenced and inline dict cases
     let acroform_id = {
         let cat  = doc.get_object(cat_id).map_err(|e| e.to_string())?;
         let dict = cat.as_dict().map_err(|e| e.to_string())?;
         match dict.get(b"AcroForm") {
             Ok(Object::Reference(id)) => *id,
-            _ => return Ok(()), // no AcroForm or inline dict — skip silently
+            Ok(Object::Dictionary(_)) => {
+                let inline = dict.get(b"AcroForm").unwrap().clone();
+                let new_id = doc.add_object(inline);
+                let cat_obj = doc.get_object_mut(cat_id).map_err(|e| e.to_string())?;
+                if let Object::Dictionary(cat_dict) = cat_obj {
+                    cat_dict.set(b"AcroForm", Object::Reference(new_id));
+                }
+                new_id
+            }
+            _ => return Ok(()),
         }
     };
 
@@ -633,7 +660,7 @@ fn collect_field_updates(
         let partial: String = dict.get(b"T")
             .ok()
             .and_then(|o| match o {
-                Object::String(s, _) => String::from_utf8(s.clone()).ok(),
+                Object::String(s, _) => pdf_text_to_string(s),
                 _ => None,
             })
             .unwrap_or_default();
@@ -841,5 +868,226 @@ mod tests {
         assert!(s.contains("Do"), "missing XObject Do operator");
         assert!(s.contains(" cm\n"), "missing transformation matrix");
         assert!(s.contains(&name), "resource name not in content stream");
+    }
+
+    /// Helper: create a minimal valid PDF document with a catalog that has a Root
+    /// entry in the trailer.
+    fn make_doc_with_catalog() -> (Document, ObjectId) {
+        use lopdf::dictionary;
+        let mut doc = Document::new();
+        let pages_id = doc.add_object(dictionary! {
+            b"Type" => Object::Name(b"Pages".to_vec()),
+            b"Kids" => Object::Array(vec![]),
+            b"Count" => Object::Integer(0),
+        });
+        let cat_id = doc.add_object(dictionary! {
+            b"Type" => Object::Name(b"Catalog".to_vec()),
+            b"Pages" => Object::Reference(pages_id),
+        });
+        doc.trailer.set(b"Root", Object::Reference(cat_id));
+        (doc, cat_id)
+    }
+
+    /// Build a minimal PDF with an AcroForm containing one text field and one checkbox,
+    /// then verify that write_form_fields persists the values through save/load.
+    #[test]
+    fn test_write_form_fields_persists_values() {
+        use lopdf::dictionary;
+
+        let (mut doc, cat_id) = make_doc_with_catalog();
+
+        let text_field_id = doc.add_object(dictionary! {
+            b"T" => Object::String(b"Name1".to_vec(), StringFormat::Literal),
+            b"FT" => Object::Name(b"Tx".to_vec()),
+        });
+
+        let cb_field_id = doc.add_object(dictionary! {
+            b"T" => Object::String(b"Check1".to_vec(), StringFormat::Literal),
+            b"FT" => Object::Name(b"Btn".to_vec()),
+            b"V" => Object::Name(b"Off".to_vec()),
+            b"AS" => Object::Name(b"Off".to_vec()),
+            b"AP" => dictionary! {
+                b"N" => dictionary! {
+                    b"Yes" => Object::Null,
+                    b"Off" => Object::Null,
+                },
+            },
+        });
+
+        let acroform_id = doc.add_object(dictionary! {
+            b"Fields" => vec![
+                Object::Reference(text_field_id),
+                Object::Reference(cb_field_id),
+            ],
+        });
+
+        if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(cat_id) {
+            cat.set(b"AcroForm", Object::Reference(acroform_id));
+        }
+
+        let fields = vec![
+            FormFieldValue { name: "Name1".into(), value: "Alice".into() },
+            FormFieldValue { name: "Check1".into(), value: "true".into() },
+        ];
+        write_form_fields(&mut doc, &fields).unwrap();
+
+        let tf = doc.get_object(text_field_id).unwrap().as_dict().unwrap();
+        match tf.get(b"V").unwrap() {
+            Object::String(s, _) => assert_eq!(s, b"Alice"),
+            other => panic!("expected String for text /V, got {:?}", other),
+        }
+
+        let cb = doc.get_object(cb_field_id).unwrap().as_dict().unwrap();
+        match cb.get(b"V").unwrap() {
+            Object::Name(n) => assert_eq!(n, b"Yes"),
+            other => panic!("expected Name for checkbox /V, got {:?}", other),
+        }
+        match cb.get(b"AS").unwrap() {
+            Object::Name(n) => assert_eq!(n, b"Yes"),
+            other => panic!("expected Name for checkbox /AS, got {:?}", other),
+        }
+    }
+
+    /// Same as above but with AcroForm as an inline dictionary (not a reference).
+    #[test]
+    fn test_write_form_fields_inline_acroform() {
+        use lopdf::dictionary;
+
+        let (mut doc, cat_id) = make_doc_with_catalog();
+
+        let text_field_id = doc.add_object(dictionary! {
+            b"T" => Object::String(b"Field1".to_vec(), StringFormat::Literal),
+            b"FT" => Object::Name(b"Tx".to_vec()),
+        });
+
+        if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(cat_id) {
+            cat.set(b"AcroForm", dictionary! {
+                b"Fields" => vec![Object::Reference(text_field_id)],
+            });
+        }
+
+        let fields = vec![
+            FormFieldValue { name: "Field1".into(), value: "Bob".into() },
+        ];
+        write_form_fields(&mut doc, &fields).unwrap();
+
+        let tf = doc.get_object(text_field_id).unwrap().as_dict().unwrap();
+        match tf.get(b"V").unwrap() {
+            Object::String(s, _) => assert_eq!(s, b"Bob"),
+            other => panic!("expected String for text /V, got {:?}", other),
+        }
+    }
+
+    /// Verify that values survive a save-to-bytes/reload round-trip.
+    #[test]
+    fn test_write_form_fields_roundtrip() {
+        use lopdf::dictionary;
+
+        let (mut doc, cat_id) = make_doc_with_catalog();
+
+        let text_field_id = doc.add_object(dictionary! {
+            b"T" => Object::String(b"Name1".to_vec(), StringFormat::Literal),
+            b"FT" => Object::Name(b"Tx".to_vec()),
+        });
+
+        let acroform_id = doc.add_object(dictionary! {
+            b"Fields" => vec![Object::Reference(text_field_id)],
+        });
+
+        if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(cat_id) {
+            cat.set(b"AcroForm", Object::Reference(acroform_id));
+        }
+
+        let fields = vec![
+            FormFieldValue { name: "Name1".into(), value: "Hello World".into() },
+        ];
+        write_form_fields(&mut doc, &fields).unwrap();
+
+        // Save to a byte buffer and reload
+        let mut buf = Vec::new();
+        doc.save_to(&mut buf).unwrap();
+        let doc2 = Document::load_mem(&buf).unwrap();
+
+        // Find the text field in the reloaded document and check /V
+        let cat2 = doc2.get_object(catalog_id(&doc2).unwrap()).unwrap().as_dict().unwrap();
+        let af_id = cat2.get(b"AcroForm").unwrap().as_reference().unwrap();
+        let af = doc2.get_object(af_id).unwrap().as_dict().unwrap();
+        let field_refs = af.get(b"Fields").unwrap().as_array().unwrap();
+        let fid = field_refs[0].as_reference().unwrap();
+        let field = doc2.get_object(fid).unwrap().as_dict().unwrap();
+
+        match field.get(b"V").unwrap() {
+            Object::String(s, _) => assert_eq!(String::from_utf8(s.clone()).unwrap(), "Hello World"),
+            other => panic!("expected String for text /V after roundtrip, got {:?}", other),
+        }
+    }
+
+    /// Verify that field names stored as PDFDocEncoding (Latin-1) are matched correctly.
+    #[test]
+    fn test_write_form_fields_pdfdocencoding_name() {
+        use lopdf::dictionary;
+
+        let (mut doc, cat_id) = make_doc_with_catalog();
+
+        // "État" in Latin-1: É=0xC9, t=0x74, a=0x61, t=0x74
+        let latin1_name: Vec<u8> = vec![0xC9, b't', b'a', b't'];
+        let text_field_id = doc.add_object(dictionary! {
+            b"T" => Object::String(latin1_name, StringFormat::Literal),
+            b"FT" => Object::Name(b"Tx".to_vec()),
+        });
+
+        let acroform_id = doc.add_object(dictionary! {
+            b"Fields" => vec![Object::Reference(text_field_id)],
+        });
+
+        if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(cat_id) {
+            cat.set(b"AcroForm", Object::Reference(acroform_id));
+        }
+
+        // Frontend sends the name as proper Unicode "État"
+        let fields = vec![
+            FormFieldValue { name: "\u{00C9}tat".into(), value: "test".into() },
+        ];
+        write_form_fields(&mut doc, &fields).unwrap();
+
+        let tf = doc.get_object(text_field_id).unwrap().as_dict().unwrap();
+        match tf.get(b"V").unwrap() {
+            Object::String(s, _) => assert_eq!(s, b"test"),
+            other => panic!("expected String for text /V, got {:?}", other),
+        }
+    }
+
+    /// Verify that UTF-16BE field names are matched correctly.
+    #[test]
+    fn test_write_form_fields_utf16be_name() {
+        use lopdf::dictionary;
+
+        let (mut doc, cat_id) = make_doc_with_catalog();
+
+        // "État" as UTF-16BE with BOM: FE FF 00C9 0074 0061 0074
+        let utf16_name: Vec<u8> = vec![0xFE, 0xFF, 0x00, 0xC9, 0x00, 0x74, 0x00, 0x61, 0x00, 0x74];
+        let text_field_id = doc.add_object(dictionary! {
+            b"T" => Object::String(utf16_name, StringFormat::Literal),
+            b"FT" => Object::Name(b"Tx".to_vec()),
+        });
+
+        let acroform_id = doc.add_object(dictionary! {
+            b"Fields" => vec![Object::Reference(text_field_id)],
+        });
+
+        if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(cat_id) {
+            cat.set(b"AcroForm", Object::Reference(acroform_id));
+        }
+
+        let fields = vec![
+            FormFieldValue { name: "\u{00C9}tat".into(), value: "test16".into() },
+        ];
+        write_form_fields(&mut doc, &fields).unwrap();
+
+        let tf = doc.get_object(text_field_id).unwrap().as_dict().unwrap();
+        match tf.get(b"V").unwrap() {
+            Object::String(s, _) => assert_eq!(s, b"test16"),
+            other => panic!("expected String for text /V, got {:?}", other),
+        }
     }
 }

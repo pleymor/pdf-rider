@@ -437,7 +437,7 @@ export class PdfPageView {
         if (a.checkBox) {
           const inp = document.createElement("input");
           inp.type = "checkbox";
-          inp.checked = initialVal === "true" || initialVal === "Yes" || initialVal === "On";
+          inp.checked = !!initialVal && initialVal !== "Off" && initialVal !== "false";
           inp.addEventListener("change", () => onChange(fieldName, inp.checked ? "true" : "false"));
           inp.style.cssText = `position:absolute;left:${left}px;top:${top}px;width:${width}px;height:${height}px;`;
           this.formLayer.appendChild(inp);
@@ -568,11 +568,11 @@ export class PdfViewer {
   // ── Load ────────────────────────────────────────────────────────────────────
 
   async load(filePath: string): Promise<void> {
-    await this._openDoc(convertFileSrc(filePath));
+    await this._openDoc(convertFileSrc(filePath) + `?t=${Date.now()}`);
   }
 
   async loadWithPassword(filePath: string, password: string): Promise<void> {
-    await this._openDoc(convertFileSrc(filePath), password);
+    await this._openDoc(convertFileSrc(filePath) + `?t=${Date.now()}`, password);
   }
 
   private async _openDoc(url: string, password?: string): Promise<void> {
