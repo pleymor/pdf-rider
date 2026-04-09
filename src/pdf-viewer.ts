@@ -4,7 +4,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { CanvasOverlay } from "./canvas-overlay";
 import { AnnotationStore } from "./annotation-store";
-import { defaultToolState, type ActiveToolState } from "./models";
+import { defaultToolState, type ActiveToolState, CSS_UNITS } from "./models";
 import { openUrl } from "./tauri-bridge";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -504,7 +504,7 @@ export class PdfViewer {
   private _currentPage = 1;
   private _focusedPage = 1;
   private _pageCount  = 0;
-  private _scale      = 1.5;
+  private _scale      = CSS_UNITS; // 100% actual size
   private _rotation   = 0;
   private _toolState: ActiveToolState = defaultToolState();
   private _store: AnnotationStore = new AnnotationStore();
@@ -747,7 +747,7 @@ export class PdfViewer {
   // ── Zoom / Rotate / Reflow (T022-T026) ──────────────────────────────────────
 
   async setScale(scale: number): Promise<void> {
-    this._scale = Math.max(0.25, Math.min(5.0, scale));
+    this._scale = Math.max(0.25 * CSS_UNITS, Math.min(5.0 * CSS_UNITS, scale));
     this.reflow();
   }
 

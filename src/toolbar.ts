@@ -5,6 +5,7 @@ import {
   type ActiveToolState,
   type TextAlignmentValue,
   type ToolKind,
+  CSS_UNITS,
 } from "./models";
 import type { Translations } from "./i18n";
 import {
@@ -63,7 +64,7 @@ export class Toolbar {
   private pageTotal!: HTMLSpanElement;
   private pageNavSection!: HTMLElement;
   private zoomInput!: HTMLInputElement;
-  private _lastScale = 1.5;
+  private _lastScale = CSS_UNITS;
   private toolBtns: Partial<Record<ToolKind, HTMLButtonElement>> = {};
 
   private _i18nText  = new Map<HTMLElement, keyof Translations>();
@@ -109,7 +110,7 @@ export class Toolbar {
   updateZoom(scale: number): void {
     this._lastScale = scale;
     if (this.zoomInput && document.activeElement !== this.zoomInput) {
-      this.zoomInput.value = `${Math.round(scale * 100)}%`;
+      this.zoomInput.value = `${Math.round(scale / CSS_UNITS * 100)}%`;
     }
   }
 
@@ -234,7 +235,7 @@ export class Toolbar {
     this.zoomInput = document.createElement("input");
     this.zoomInput.type = "text";
     this.zoomInput.className = "zoom-input";
-    this.zoomInput.value = "150%";
+    this.zoomInput.value = "100%";
     this.zoomInput.title = "Zoom (free input)";
     this.reg(this.zoomInput, undefined, "ttZoomInput");
     this.zoomInput.addEventListener("focus", () => this.zoomInput.select());
@@ -243,13 +244,13 @@ export class Toolbar {
         this.commitZoomInput();
         this.zoomInput.blur();
       } else if (e.key === "Escape") {
-        this.zoomInput.value = `${Math.round(this._lastScale * 100)}%`;
+        this.zoomInput.value = `${Math.round(this._lastScale / CSS_UNITS * 100)}%`;
         this.zoomInput.blur();
       }
     });
     this.zoomInput.addEventListener("blur", () => {
       // Reset to last known scale if not committed
-      this.zoomInput.value = `${Math.round(this._lastScale * 100)}%`;
+      this.zoomInput.value = `${Math.round(this._lastScale / CSS_UNITS * 100)}%`;
     });
 
     const zoomIn = this.btn(ICON_ZOOM_IN, "Zoom in (Ctrl++)", "icon-btn");
@@ -477,9 +478,9 @@ export class Toolbar {
     const raw = this.zoomInput.value.replace("%", "").trim();
     const pct = parseFloat(raw);
     if (!isNaN(pct) && pct >= 10 && pct <= 500) {
-      const scale = Math.round(pct) / 100;
+      const scale = Math.round(pct) / 100 * CSS_UNITS;
       this._lastScale = scale;
-      this.zoomInput.value = `${Math.round(scale * 100)}%`;
+      this.zoomInput.value = `${Math.round(scale / CSS_UNITS * 100)}%`;
       this.emit({ type: "zoom-set", scale });
     }
   }

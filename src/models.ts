@@ -1,3 +1,7 @@
+// PDF points are 1/72 inch; CSS pixels are 1/96 inch.
+// Multiplying the pdf.js scale by this factor makes "100%" match actual size.
+export const CSS_UNITS = 96 / 72;
+
 // ── Colour ────────────────────────────────────────────────────────────────────
 
 export interface RgbColor {

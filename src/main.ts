@@ -13,6 +13,7 @@ import {
   type FormFieldValue,
   type RectAnnotation,
   type TextAnnotation,
+  CSS_UNITS,
 } from "./models";
 import {
   openPdfDialog,
@@ -30,7 +31,9 @@ import { ask } from "@tauri-apps/plugin-dialog";
 
 // ── Zoom levels ───────────────────────────────────────────────────────────────
 
-const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0];
+// Zoom levels in internal (pdf.js) scale.  Each entry = user-visible fraction × CSS_UNITS.
+const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0]
+  .map(z => Math.round(z * CSS_UNITS * 1000) / 1000);
 
 function snapZoom(current: number, dir: 1 | -1): number {
   if (dir === 1) {
@@ -533,7 +536,7 @@ document.addEventListener("keydown", async (e) => {
   }
   if (ctrl && e.key === "0") {
     e.preventDefault();
-    if (viewer.isLoaded()) { await viewer.setScale(1.0); toolbar.updateZoom(viewer.scale); }
+    if (viewer.isLoaded()) { await viewer.setScale(CSS_UNITS); toolbar.updateZoom(viewer.scale); }
     return;
   }
   if (!ctrl && (e.key === "ArrowRight" || e.key === "PageDown")) {
