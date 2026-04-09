@@ -1,5 +1,70 @@
 type SignatureReadyHandler = (imageData: string) => void;
 
+// ── Smoothing algorithms (ported from full-rust branch) ──────────────────────
+
+/** Douglas-Peucker polyline simplification. */
+function douglasPeucker(points: [number, number][], epsilon: number): [number, number][] {
+  const n = points.length;
+  if (n <= 2) return points.slice();
+
+  const [ax, ay] = points[0];
+  const [bx, by] = points[n - 1];
+  const lineLen = Math.max(Math.hypot(bx - ax, by - ay), 0.001);
+
+  let maxDist = 0;
+  let maxIdx = 0;
+  for (let i = 1; i < n - 1; i++) {
+    const [px, py] = points[i];
+    const dist = Math.abs((by - ay) * px - (bx - ax) * py + bx * ay - by * ax) / lineLen;
+    if (dist > maxDist) { maxDist = dist; maxIdx = i; }
+  }
+
+  if (maxDist > epsilon) {
+    const left = douglasPeucker(points.slice(0, maxIdx + 1), epsilon);
+    const right = douglasPeucker(points.slice(maxIdx), epsilon);
+    left.pop();
+    return left.concat(right);
+  }
+  return [points[0], points[n - 1]];
+}
+
+/** Smooth point positions with moving average, keeping endpoints fixed. */
+function smoothPoints(points: [number, number][], window: number): [number, number][] {
+  const n = points.length;
+  if (n <= 2) return points.slice();
+  const half = Math.floor(window / 2);
+  const result: [number, number][] = [points[0]];
+  for (let i = 1; i < n - 1; i++) {
+    const start = Math.max(0, i - half);
+    const end = Math.min(n, i + half + 1);
+    let sx = 0, sy = 0;
+    for (let j = start; j < end; j++) { sx += points[j][0]; sy += points[j][1]; }
+    const count = end - start;
+    result.push([sx / count, sy / count]);
+  }
+  result.push(points[n - 1]);
+  return result;
+}
+
+/** Smooth a float array with moving average, keeping endpoints fixed. */
+function smoothValues(values: number[], window: number): number[] {
+  const n = values.length;
+  if (n <= 2) return values.slice();
+  const half = Math.floor(window / 2);
+  const result = [values[0]];
+  for (let i = 1; i < n - 1; i++) {
+    const start = Math.max(0, i - half);
+    const end = Math.min(n, i + half + 1);
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += values[j];
+    result.push(sum / (end - start));
+  }
+  result.push(values[n - 1]);
+  return result;
+}
+
+// ── SignatureModal ────────────────────────────────────────────────────────────
+
 export class SignatureModal {
   private backdrop: HTMLElement;
   private canvas: HTMLCanvasElement;
@@ -7,6 +72,9 @@ export class SignatureModal {
 
   private isDrawing = false;
   private hasContent = false;
+
+  /** All strokes collected so far — each stroke is a list of [x,y] pairs. */
+  private strokes: [number, number][][] = [];
 
   private handlers: SignatureReadyHandler[] = [];
 
@@ -39,8 +107,11 @@ export class SignatureModal {
 
   private clearCanvas(): void {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.strokes = [];
     this.hasContent = false;
   }
+
+  // ── Drawing ──────────────────────────────────────────────────────────────
 
   private initDrawing(): void {
     this.canvas.style.touchAction = "none";
@@ -49,11 +120,13 @@ export class SignatureModal {
       e.preventDefault();
       this.isDrawing = true;
       this.canvas.setPointerCapture(e.pointerId);
+      this.strokes.push([[e.offsetX, e.offsetY]]);
+
+      // Start rough preview path
       this.ctx.beginPath();
       this.ctx.moveTo(e.offsetX, e.offsetY);
-
       this.ctx.strokeStyle = "#000";
-      this.ctx.lineWidth = Math.max(1, (e.pressure || 0.5) * 3);
+      this.ctx.lineWidth = 2;
       this.ctx.lineCap = "round";
       this.ctx.lineJoin = "round";
     });
@@ -61,7 +134,10 @@ export class SignatureModal {
     this.canvas.addEventListener("pointermove", (e) => {
       if (!this.isDrawing) return;
       e.preventDefault();
-      this.ctx.lineWidth = Math.max(1, (e.pressure || 0.5) * 3);
+      const current = this.strokes[this.strokes.length - 1];
+      current.push([e.offsetX, e.offsetY]);
+
+      // Rough preview
       this.ctx.lineTo(e.offsetX, e.offsetY);
       this.ctx.stroke();
       this.ctx.beginPath();
@@ -70,11 +146,80 @@ export class SignatureModal {
     });
 
     const stopDrawing = (): void => {
+      if (!this.isDrawing) return;
       this.isDrawing = false;
+      // Re-render all strokes with smooth curves
+      this.renderSmooth();
     };
     this.canvas.addEventListener("pointerup", stopDrawing);
     this.canvas.addEventListener("pointercancel", stopDrawing);
   }
+
+  // ── Smooth rendering ─────────────────────────────────────────────────────
+
+  private renderSmooth(): void {
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+    for (const rawPoints of this.strokes) {
+      if (rawPoints.length < 2) continue;
+
+      // 1. Simplify
+      let pts = douglasPeucker(rawPoints, 1.0);
+      if (pts.length < 2) continue;
+
+      // 2. Smooth positions (2 passes, window 3)
+      for (let p = 0; p < 2; p++) pts = smoothPoints(pts, 3);
+      if (pts.length < 2) continue;
+
+      const n = pts.length;
+
+      // 3. Compute per-point width based on orientation, then smooth
+      const rawWidths: number[] = [];
+      for (let i = 0; i < n; i++) {
+        const [dx, dy] = i === 0
+          ? [pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]]
+          : i === n - 1
+            ? [pts[n - 1][0] - pts[n - 2][0], pts[n - 1][1] - pts[n - 2][1]]
+            : [pts[i + 1][0] - pts[i - 1][0], pts[i + 1][1] - pts[i - 1][1]];
+        const len = Math.max(Math.hypot(dx, dy), 0.001);
+        const verticality = Math.abs(dy / len); // 0=horizontal, 1=vertical
+        const minW = 0.8;
+        const maxW = 4.0;
+        rawWidths.push(minW + verticality * (maxW - minW));
+      }
+
+      // Smooth widths (4 passes, window 7)
+      let widths = rawWidths;
+      for (let p = 0; p < 4; p++) widths = smoothValues(widths, 7);
+
+      // 4. Draw Catmull-Rom spline segments with variable width
+      ctx.strokeStyle = "#0f0f23";
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      for (let i = 0; i < n - 1; i++) {
+        const p0 = i > 0 ? pts[i - 1] : pts[i];
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const p3 = i + 2 < n ? pts[i + 2] : pts[i + 1];
+
+        // Catmull-Rom → cubic Bezier control points
+        const cp1x = p1[0] + (p2[0] - p0[0]) / 6;
+        const cp1y = p1[1] + (p2[1] - p0[1]) / 6;
+        const cp2x = p2[0] - (p3[0] - p1[0]) / 6;
+        const cp2y = p2[1] - (p3[1] - p1[1]) / 6;
+
+        ctx.lineWidth = (widths[i] + widths[i + 1]) * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(p1[0], p1[1]);
+        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2[0], p2[1]);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // ── Buttons ──────────────────────────────────────────────────────────────
 
   private bindButtons(): void {
     document
