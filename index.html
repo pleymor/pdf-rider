@@ -61,6 +61,60 @@
       </div>
     </div>
   </div>
+  <!-- Print modal -->
+  <div id="print-modal" class="modal-backdrop hidden">
+    <div class="modal-box print-box">
+      <div class="modal-header">
+        <span id="print-title-span" data-i18n="printTitle">Print</span>
+        <button id="print-close-btn" class="icon-btn" title="Cancel" data-i18n-title="printCancel">&#10005;</button>
+      </div>
+      <div class="print-options">
+        <div class="print-row">
+          <label class="print-label" id="print-printer-label" data-i18n="printPrinter">Printer</label>
+          <select id="print-printer-select" class="settings-select"></select>
+        </div>
+        <div id="print-no-printers" class="print-no-printers hidden" data-i18n="printNoPrinters">No printers found</div>
+        <div class="print-section-title" data-i18n="printPages">Pages</div>
+        <div class="print-range-options">
+          <label class="print-range-option">
+            <input type="radio" name="print-range" value="all" checked />
+            <span data-i18n="printAll">All</span>
+          </label>
+          <label class="print-range-option">
+            <input type="radio" name="print-range" value="current" />
+            <span data-i18n="printCurrentPage">Current page</span>
+          </label>
+          <label class="print-range-option">
+            <input type="radio" name="print-range" value="custom" />
+            <span data-i18n="printCustomRange">Custom</span>
+            <input type="text" id="print-range-input" class="print-range-input" placeholder="1-3, 5, 7-9" disabled />
+          </label>
+        </div>
+        <div class="print-row">
+          <label class="print-label" id="print-copies-label" data-i18n="printCopies">Copies</label>
+          <input type="number" id="print-copies" class="print-copies-input" value="1" min="1" max="99" />
+        </div>
+        <div class="print-row">
+          <label class="print-label" id="print-orient-label" data-i18n="printOrientation">Orientation</label>
+          <div class="print-orient-group">
+            <label><input type="radio" name="print-orient" value="portrait" checked /> <span data-i18n="printPortrait">Portrait</span></label>
+            <label><input type="radio" name="print-orient" value="landscape" /> <span data-i18n="printLandscape">Landscape</span></label>
+          </div>
+        </div>
+        <div class="print-row">
+          <label class="print-label" id="print-scale-label" data-i18n="printScale">Scale</label>
+          <div class="print-scale-group">
+            <label><input type="radio" name="print-scale" value="fit" checked /> <span data-i18n="printFitToPage">Fit to page</span></label>
+            <label><input type="radio" name="print-scale" value="actual" /> <span data-i18n="printActualSize">Actual size</span></label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="print-cancel-btn" class="btn" data-i18n="printCancelBtn">Cancel</button>
+        <button id="print-confirm-btn" class="btn btn-primary" data-i18n="printConfirmBtn">Print</button>
+      </div>
+    </div>
+  </div>
   <!-- Context menu -->
   <div id="ctx-menu" class="ctx-menu hidden">
     <button id="ctx-copy" data-i18n="ctxCopy">Copy</button>

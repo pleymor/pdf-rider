@@ -71,6 +71,24 @@ export interface Translations {
   pmDeletePage: string;
   pmRotatePage: string;
   pmRestorePage: string;
+  // Print modal
+  printTitle: string;
+  printCancel: string;
+  printPrinter: string;
+  printNoPrinters: string;
+  printPages: string;
+  printAll: string;
+  printCurrentPage: string;
+  printCustomRange: string;
+  printCopies: string;
+  printOrientation: string;
+  printPortrait: string;
+  printLandscape: string;
+  printScale: string;
+  printFitToPage: string;
+  printActualSize: string;
+  printCancelBtn: string;
+  printConfirmBtn: string;
   // Context menu
   ctxCopy: string;
 }
@@ -143,6 +161,23 @@ const EN: Translations = {
   settingsDefaultApp:  "Default App",
   settingsSetDefault:  "Set as default PDF viewer",
   settingsRemoveDefault: "Remove as default",
+  printTitle:          "Print",
+  printCancel:         "Cancel",
+  printPrinter:        "Printer",
+  printNoPrinters:     "No printers found",
+  printPages:          "Pages",
+  printAll:            "All",
+  printCurrentPage:    "Current page",
+  printCustomRange:    "Custom",
+  printCopies:         "Copies",
+  printOrientation:    "Orientation",
+  printPortrait:       "Portrait",
+  printLandscape:      "Landscape",
+  printScale:          "Scale",
+  printFitToPage:      "Fit to page",
+  printActualSize:     "Actual size",
+  printCancelBtn:      "Cancel",
+  printConfirmBtn:     "Print",
 };
 
 // ── French ────────────────────────────────────────────────────────────────────
@@ -213,6 +248,23 @@ const FR: Translations = {
   settingsDefaultApp:  "Application par d\u00e9faut",
   settingsSetDefault:  "D\u00e9finir comme visionneuse PDF par d\u00e9faut",
   settingsRemoveDefault: "Retirer l\u2019association PDF",
+  printTitle:          "Imprimer",
+  printCancel:         "Annuler",
+  printPrinter:        "Imprimante",
+  printNoPrinters:     "Aucune imprimante trouv\u00e9e",
+  printPages:          "Pages",
+  printAll:            "Toutes",
+  printCurrentPage:    "Page actuelle",
+  printCustomRange:    "Personnalis\u00e9",
+  printCopies:         "Copies",
+  printOrientation:    "Orientation",
+  printPortrait:       "Portrait",
+  printLandscape:      "Paysage",
+  printScale:          "\u00c9chelle",
+  printFitToPage:      "Ajuster \u00e0 la page",
+  printActualSize:     "Taille r\u00e9elle",
+  printCancelBtn:      "Annuler",
+  printConfirmBtn:     "Imprimer",
 };
 
 // ── Chinese (Mandarin) ────────────────────────────────────────────────────────
@@ -280,6 +332,23 @@ const ZH: Translations = {
   pmRotatePage:        "旋转页面",
   pmRestorePage:       "恢复页面",
   ctxCopy:           "\u590d\u5236",
+  printTitle:        "\u6253\u5370",
+  printCancel:       "\u53d6\u6d88",
+  printPrinter:      "\u6253\u5370\u673a",
+  printNoPrinters:   "\u672a\u627e\u5230\u6253\u5370\u673a",
+  printPages:        "\u9875\u9762",
+  printAll:          "\u5168\u90e8",
+  printCurrentPage:  "\u5f53\u524d\u9875",
+  printCustomRange:  "\u81ea\u5b9a\u4e49",
+  printCopies:       "\u4efd\u6570",
+  printOrientation:  "\u65b9\u5411",
+  printPortrait:     "\u7eb5\u5411",
+  printLandscape:    "\u6a2a\u5411",
+  printScale:        "\u7f29\u653e",
+  printFitToPage:    "\u9002\u5408\u9875\u9762",
+  printActualSize:   "\u5b9e\u9645\u5927\u5c0f",
+  printCancelBtn:    "\u53d6\u6d88",
+  printConfirmBtn:   "\u6253\u5370",
 };
 
 // ── Hindi ─────────────────────────────────────────────────────────────────────
@@ -347,6 +416,23 @@ const HI: Translations = {
   pmRotatePage:        "पृष्ठ घुमाएं",
   pmRestorePage:       "पृष्ठ पुनर्स्थापित करें",
   ctxCopy:           "\u0915\u0949\u092a\u0940",
+  printTitle:        "\u092a\u094d\u0930\u093f\u0902\u091f",
+  printCancel:       "\u0930\u0926\u094d\u0926 \u0915\u0930\u0947\u0902",
+  printPrinter:      "\u092a\u094d\u0930\u093f\u0902\u091f\u0930",
+  printNoPrinters:   "\u0915\u094b\u0908 \u092a\u094d\u0930\u093f\u0902\u091f\u0930 \u0928\u0939\u0940\u0902 \u092e\u093f\u0932\u093e",
+  printPages:        "\u092a\u0943\u0937\u094d\u0920",
+  printAll:          "\u0938\u092d\u0940",
+  printCurrentPage:  "\u0935\u0930\u094d\u0924\u092e\u093e\u0928 \u092a\u0943\u0937\u094d\u0920",
+  printCustomRange:  "\u0915\u0938\u094d\u091f\u092e",
+  printCopies:       "\u092a\u094d\u0930\u0924\u093f\u092f\u093e\u0901",
+  printOrientation:  "\u0926\u093f\u0936\u093e",
+  printPortrait:     "\u092a\u094b\u0930\u094d\u091f\u094d\u0930\u0947\u091f",
+  printLandscape:    "\u0932\u0948\u0902\u0921\u0938\u094d\u0915\u0947\u092a",
+  printScale:        "\u0938\u094d\u0915\u0947\u0932",
+  printFitToPage:    "\u092a\u0943\u0937\u094d\u0920 \u092e\u0947\u0902 \u092b\u093f\u091f",
+  printActualSize:   "\u0935\u093e\u0938\u094d\u0924\u0935\u093f\u0915 \u0906\u0915\u093e\u0930",
+  printCancelBtn:    "\u0930\u0926\u094d\u0926 \u0915\u0930\u0947\u0902",
+  printConfirmBtn:   "\u092a\u094d\u0930\u093f\u0902\u091f",
 };
 
 // ── Spanish ───────────────────────────────────────────────────────────────────
@@ -414,6 +500,23 @@ const ES: Translations = {
   pmRotatePage:        "Rotar página",
   pmRestorePage:       "Restaurar página",
   ctxCopy:           "Copiar",
+  printTitle:        "Imprimir",
+  printCancel:       "Cancelar",
+  printPrinter:      "Impresora",
+  printNoPrinters:   "No se encontraron impresoras",
+  printPages:        "P\u00e1ginas",
+  printAll:          "Todas",
+  printCurrentPage:  "P\u00e1gina actual",
+  printCustomRange:  "Personalizado",
+  printCopies:       "Copias",
+  printOrientation:  "Orientaci\u00f3n",
+  printPortrait:     "Vertical",
+  printLandscape:    "Horizontal",
+  printScale:        "Escala",
+  printFitToPage:    "Ajustar a la p\u00e1gina",
+  printActualSize:   "Tama\u00f1o real",
+  printCancelBtn:    "Cancelar",
+  printConfirmBtn:   "Imprimir",
 };
 
 // ── Arabic ────────────────────────────────────────────────────────────────────
@@ -481,6 +584,23 @@ const AR: Translations = {
   pmRotatePage:        "تدوير الصفحة",
   pmRestorePage:       "استعادة الصفحة",
   ctxCopy:           "\u0646\u0633\u062e",
+  printTitle:        "\u0637\u0628\u0627\u0639\u0629",
+  printCancel:       "\u0625\u0644\u063a\u0627\u0621",
+  printPrinter:      "\u0627\u0644\u0637\u0627\u0628\u0639\u0629",
+  printNoPrinters:   "\u0644\u0645 \u064a\u062a\u0645 \u0627\u0644\u0639\u062b\u0648\u0631 \u0639\u0644\u0649 \u0637\u0627\u0628\u0639\u0627\u062a",
+  printPages:        "\u0627\u0644\u0635\u0641\u062d\u0627\u062a",
+  printAll:          "\u0627\u0644\u0643\u0644",
+  printCurrentPage:  "\u0627\u0644\u0635\u0641\u062d\u0629 \u0627\u0644\u062d\u0627\u0644\u064a\u0629",
+  printCustomRange:  "\u0645\u062e\u0635\u0635",
+  printCopies:       "\u0646\u0633\u062e",
+  printOrientation:  "\u0627\u0644\u0627\u062a\u062c\u0627\u0647",
+  printPortrait:     "\u0639\u0645\u0648\u062f\u064a",
+  printLandscape:    "\u0623\u0641\u0642\u064a",
+  printScale:        "\u0627\u0644\u0645\u0642\u064a\u0627\u0633",
+  printFitToPage:    "\u0645\u0644\u0627\u0626\u0645 \u0644\u0644\u0635\u0641\u062d\u0629",
+  printActualSize:   "\u0627\u0644\u062d\u062c\u0645 \u0627\u0644\u0641\u0639\u0644\u064a",
+  printCancelBtn:    "\u0625\u0644\u063a\u0627\u0621",
+  printConfirmBtn:   "\u0637\u0628\u0627\u0639\u0629",
 };
 
 // ── Bengali ───────────────────────────────────────────────────────────────────
@@ -548,6 +668,23 @@ const BN: Translations = {
   pmRotatePage:        "পৃষ্ঠা ঘোরান",
   pmRestorePage:       "পৃষ্ঠা পুনরুদ্ধার",
   ctxCopy:           "\u0995\u09aa\u09bf",
+  printTitle:        "\u09ae\u09c1\u09a6\u09cd\u09b0\u09a3",
+  printCancel:       "\u09ac\u09be\u09a4\u09bf\u09b2",
+  printPrinter:      "\u09aa\u09cd\u09b0\u09bf\u09a8\u09cd\u099f\u09be\u09b0",
+  printNoPrinters:   "\u0995\u09cb\u09a8\u09cb \u09aa\u09cd\u09b0\u09bf\u09a8\u09cd\u099f\u09be\u09b0 \u09aa\u09be\u0993\u09af\u09bc\u09be \u09af\u09be\u09af\u09bc\u09a8\u09bf",
+  printPages:        "\u09aa\u09c3\u09b7\u09cd\u09a0\u09be",
+  printAll:          "\u09b8\u09ac",
+  printCurrentPage:  "\u09ac\u09b0\u09cd\u09a4\u09ae\u09be\u09a8 \u09aa\u09c3\u09b7\u09cd\u09a0\u09be",
+  printCustomRange:  "\u0995\u09be\u09b8\u09cd\u099f\u09ae",
+  printCopies:       "\u0995\u09aa\u09bf",
+  printOrientation:  "\u0985\u09b0\u09bf\u09af\u09bc\u09c7\u09a8\u09cd\u099f\u09c7\u09b6\u09a8",
+  printPortrait:     "\u09aa\u09cb\u09b0\u09cd\u099f\u09cd\u09b0\u09c7\u099f",
+  printLandscape:    "\u09b2\u09cd\u09af\u09be\u09a8\u09cd\u09a1\u09b8\u09cd\u0995\u09c7\u09aa",
+  printScale:        "\u09b8\u09cd\u0995\u09c7\u09b2",
+  printFitToPage:    "\u09aa\u09c3\u09b7\u09cd\u09a0\u09be\u09af\u09bc \u09ae\u09be\u09a8\u09be\u09a8\u09b8\u0987",
+  printActualSize:   "\u09aa\u09cd\u09b0\u0995\u09c3\u09a4 \u0986\u0995\u09be\u09b0",
+  printCancelBtn:    "\u09ac\u09be\u09a4\u09bf\u09b2",
+  printConfirmBtn:   "\u09ae\u09c1\u09a6\u09cd\u09b0\u09a3",
 };
 
 // ── Russian ───────────────────────────────────────────────────────────────────
@@ -615,6 +752,23 @@ const RU: Translations = {
   pmRotatePage:        "Повернуть страницу",
   pmRestorePage:       "Восстановить страницу",
   ctxCopy:           "\u041a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u0442\u044c",
+  printTitle:        "\u041f\u0435\u0447\u0430\u0442\u044c",
+  printCancel:       "\u041e\u0442\u043c\u0435\u043d\u0430",
+  printPrinter:      "\u041f\u0440\u0438\u043d\u0442\u0435\u0440",
+  printNoPrinters:   "\u041f\u0440\u0438\u043d\u0442\u0435\u0440\u044b \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u044b",
+  printPages:        "\u0421\u0442\u0440\u0430\u043d\u0438\u0446\u044b",
+  printAll:          "\u0412\u0441\u0435",
+  printCurrentPage:  "\u0422\u0435\u043a\u0443\u0449\u0430\u044f \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u0430",
+  printCustomRange:  "\u0414\u0438\u0430\u043f\u0430\u0437\u043e\u043d",
+  printCopies:       "\u041a\u043e\u043f\u0438\u0438",
+  printOrientation:  "\u041e\u0440\u0438\u0435\u043d\u0442\u0430\u0446\u0438\u044f",
+  printPortrait:     "\u041a\u043d\u0438\u0436\u043d\u0430\u044f",
+  printLandscape:    "\u0410\u043b\u044c\u0431\u043e\u043c\u043d\u0430\u044f",
+  printScale:        "\u041c\u0430\u0441\u0448\u0442\u0430\u0431",
+  printFitToPage:    "\u041f\u043e \u0440\u0430\u0437\u043c\u0435\u0440\u0443 \u0441\u0442\u0440\u0430\u043d\u0438\u0446\u044b",
+  printActualSize:   "\u0420\u0435\u0430\u043b\u044c\u043d\u044b\u0439 \u0440\u0430\u0437\u043c\u0435\u0440",
+  printCancelBtn:    "\u041e\u0442\u043c\u0435\u043d\u0430",
+  printConfirmBtn:   "\u041f\u0435\u0447\u0430\u0442\u044c",
 };
 
 // ── Portuguese ────────────────────────────────────────────────────────────────
@@ -682,6 +836,23 @@ const PT: Translations = {
   pmRotatePage:        "Rodar página",
   pmRestorePage:       "Restaurar página",
   ctxCopy:           "Copiar",
+  printTitle:        "Imprimir",
+  printCancel:       "Cancelar",
+  printPrinter:      "Impressora",
+  printNoPrinters:   "Nenhuma impressora encontrada",
+  printPages:        "P\u00e1ginas",
+  printAll:          "Todas",
+  printCurrentPage:  "P\u00e1gina atual",
+  printCustomRange:  "Personalizado",
+  printCopies:       "C\u00f3pias",
+  printOrientation:  "Orienta\u00e7\u00e3o",
+  printPortrait:     "Retrato",
+  printLandscape:    "Paisagem",
+  printScale:        "Escala",
+  printFitToPage:    "Ajustar \u00e0 p\u00e1gina",
+  printActualSize:   "Tamanho real",
+  printCancelBtn:    "Cancelar",
+  printConfirmBtn:   "Imprimir",
 };
 
 // ── Urdu ──────────────────────────────────────────────────────────────────────
@@ -749,6 +920,23 @@ const UR: Translations = {
   pmRotatePage:        "صفحہ گھمائیں",
   pmRestorePage:       "صفحہ بحال کریں",
   ctxCopy:           "\u06a9\u0627\u067e\u06cc",
+  printTitle:        "\u067e\u0631\u0646\u0679",
+  printCancel:       "\u0645\u0646\u0633\u0648\u062e",
+  printPrinter:      "\u067e\u0631\u0646\u0679\u0631",
+  printNoPrinters:   "\u06a9\u0648\u0626\u06cc \u067e\u0631\u0646\u0679\u0631 \u0646\u0647\u06cc\u0646 \u0645\u0644\u0627",
+  printPages:        "\u0635\u0641\u062d\u0627\u062a",
+  printAll:          "\u0633\u0628",
+  printCurrentPage:  "\u0645\u0648\u062c\u0648\u062f\u06c1 \u0635\u0641\u062d\u06c1",
+  printCustomRange:  "\u062d\u0633\u0628 \u0636\u0631\u0648\u0631\u062a",
+  printCopies:       "\u06a9\u0627\u067e\u06cc\u0627\u06ba",
+  printOrientation:  "\u0633\u0645\u062a",
+  printPortrait:     "\u067e\u0648\u0631\u0679\u0631\u06cc\u0679",
+  printLandscape:    "\u0644\u06cc\u0646\u0688\u0633\u06a9\u06cc\u067e",
+  printScale:        "\u067e\u06cc\u0645\u0627\u0626\u0634",
+  printFitToPage:    "\u0635\u0641\u062d\u06d2 \u0645\u06cc\u06ba \u0641\u0679",
+  printActualSize:   "\u0627\u0635\u0644 \u0633\u0627\u0626\u0632",
+  printCancelBtn:    "\u0645\u0646\u0633\u0648\u062e",
+  printConfirmBtn:   "\u067e\u0631\u0646\u0679",
 };
 
 // ── Indonesian ────────────────────────────────────────────────────────────────
@@ -816,6 +1004,23 @@ const ID: Translations = {
   pmRotatePage:        "Putar halaman",
   pmRestorePage:       "Pulihkan halaman",
   ctxCopy:           "Salin",
+  printTitle:        "Cetak",
+  printCancel:       "Batal",
+  printPrinter:      "Printer",
+  printNoPrinters:   "Tidak ada printer ditemukan",
+  printPages:        "Halaman",
+  printAll:          "Semua",
+  printCurrentPage:  "Halaman saat ini",
+  printCustomRange:  "Kustom",
+  printCopies:       "Salinan",
+  printOrientation:  "Orientasi",
+  printPortrait:     "Potret",
+  printLandscape:    "Lanskap",
+  printScale:        "Skala",
+  printFitToPage:    "Sesuaikan halaman",
+  printActualSize:   "Ukuran asli",
+  printCancelBtn:    "Batal",
+  printConfirmBtn:   "Cetak",
 };
 
 // ── German ────────────────────────────────────────────────────────────────────
@@ -883,6 +1088,23 @@ const DE: Translations = {
   pmRotatePage:        "Seite drehen",
   pmRestorePage:       "Seite wiederherstellen",
   ctxCopy:           "Kopieren",
+  printTitle:        "Drucken",
+  printCancel:       "Abbrechen",
+  printPrinter:      "Drucker",
+  printNoPrinters:   "Keine Drucker gefunden",
+  printPages:        "Seiten",
+  printAll:          "Alle",
+  printCurrentPage:  "Aktuelle Seite",
+  printCustomRange:  "Benutzerdefiniert",
+  printCopies:       "Kopien",
+  printOrientation:  "Ausrichtung",
+  printPortrait:     "Hochformat",
+  printLandscape:    "Querformat",
+  printScale:        "Skalierung",
+  printFitToPage:    "An Seite anpassen",
+  printActualSize:   "Tats\u00e4chliche Gr\u00f6\u00dfe",
+  printCancelBtn:    "Abbrechen",
+  printConfirmBtn:   "Drucken",
 };
 
 // ── Japanese ──────────────────────────────────────────────────────────────────
@@ -950,6 +1172,23 @@ const JA: Translations = {
   pmRotatePage:        "ページを回転",
   pmRestorePage:       "ページを復元",
   ctxCopy:           "\u30b3\u30d4\u30fc",
+  printTitle:        "\u5370\u5237",
+  printCancel:       "\u30ad\u30e3\u30f3\u30bb\u30eb",
+  printPrinter:      "\u30d7\u30ea\u30f3\u30bf\u30fc",
+  printNoPrinters:   "\u30d7\u30ea\u30f3\u30bf\u30fc\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093",
+  printPages:        "\u30da\u30fc\u30b8",
+  printAll:          "\u3059\u3079\u3066",
+  printCurrentPage:  "\u73fe\u5728\u306e\u30da\u30fc\u30b8",
+  printCustomRange:  "\u30ab\u30b9\u30bf\u30e0",
+  printCopies:       "\u90e8\u6570",
+  printOrientation:  "\u5411\u304d",
+  printPortrait:     "\u7e26",
+  printLandscape:    "\u6a2a",
+  printScale:        "\u30b9\u30b1\u30fc\u30eb",
+  printFitToPage:    "\u30da\u30fc\u30b8\u306b\u5408\u308f\u305b\u308b",
+  printActualSize:   "\u5b9f\u969b\u306e\u30b5\u30a4\u30ba",
+  printCancelBtn:    "\u30ad\u30e3\u30f3\u30bb\u30eb",
+  printConfirmBtn:   "\u5370\u5237",
 };
 
 // ── Swahili ───────────────────────────────────────────────────────────────────
@@ -1017,6 +1256,23 @@ const SW: Translations = {
   pmRotatePage:        "Zungusha ukurasa",
   pmRestorePage:       "Rejesha ukurasa",
   ctxCopy:           "Nakili",
+  printTitle:        "Chapisha",
+  printCancel:       "Ghairi",
+  printPrinter:      "Printa",
+  printNoPrinters:   "Hakuna printa zilizopatikana",
+  printPages:        "Kurasa",
+  printAll:          "Zote",
+  printCurrentPage:  "Ukurasa wa sasa",
+  printCustomRange:  "Maalum",
+  printCopies:       "Nakala",
+  printOrientation:  "Mwelekeo",
+  printPortrait:     "Wima",
+  printLandscape:    "Mlalo",
+  printScale:        "Kipimo",
+  printFitToPage:    "Linganisha na ukurasa",
+  printActualSize:   "Ukubwa halisi",
+  printCancelBtn:    "Ghairi",
+  printConfirmBtn:   "Chapisha",
 };
 
 // ── Marathi ───────────────────────────────────────────────────────────────────
@@ -1084,6 +1340,23 @@ const MR: Translations = {
   pmRotatePage:        "पृष्ठ फिरवा",
   pmRestorePage:       "पृष्ठ पुनर्स्थापित करा",
   ctxCopy:           "\u0915\u0949\u092a\u0940",
+  printTitle:        "\u092a\u094d\u0930\u093f\u0902\u091f",
+  printCancel:       "\u0930\u0926\u094d\u0926 \u0915\u0930\u093e",
+  printPrinter:      "\u092a\u094d\u0930\u093f\u0902\u091f\u0930",
+  printNoPrinters:   "\u092a\u094d\u0930\u093f\u0902\u091f\u0930 \u0938\u093e\u092a\u0921\u0932\u0947 \u0928\u093e\u0939\u0940\u0924",
+  printPages:        "\u092a\u0943\u0937\u094d\u0920\u0947",
+  printAll:          "\u0938\u0930\u094d\u0935",
+  printCurrentPage:  "\u0938\u0927\u094d\u092f\u093e\u091a\u0947 \u092a\u0943\u0937\u094d\u0920",
+  printCustomRange:  "\u0915\u0938\u094d\u091f\u092e",
+  printCopies:       "\u092a\u094d\u0930\u0924\u0940",
+  printOrientation:  "\u0926\u093f\u0936\u093e",
+  printPortrait:     "\u092a\u094b\u0930\u094d\u091f\u094d\u0930\u0947\u091f",
+  printLandscape:    "\u0932\u0901\u0921\u0938\u094d\u0915\u0947\u092a",
+  printScale:        "\u0938\u094d\u0915\u0947\u0932",
+  printFitToPage:    "\u092a\u0943\u0937\u094d\u0920\u093e\u0932\u093e \u092e\u093e\u092a\u093e",
+  printActualSize:   "\u0935\u093e\u0938\u094d\u0924\u0935\u093f\u0915 \u0906\u0915\u093e\u0930",
+  printCancelBtn:    "\u0930\u0926\u094d\u0926 \u0915\u0930\u093e",
+  printConfirmBtn:   "\u092a\u094d\u0930\u093f\u0902\u091f",
 };
 
 // ── Telugu ────────────────────────────────────────────────────────────────────
@@ -1151,6 +1424,23 @@ const TE: Translations = {
   pmRotatePage:        "పేజీ తిర్గండి",
   pmRestorePage:       "పేజీ పునరుద్ధరించండి",
   ctxCopy:           "\u0c15\u0c3e\u0c2a\u0c40",
+  printTitle:        "\u0c2a\u0c4d\u0c30\u0c3f\u0c02\u0c1f\u0c4d",
+  printCancel:       "\u0c30\u0c26\u0c4d\u0c26\u0c41",
+  printPrinter:      "\u0c2a\u0c4d\u0c30\u0c3f\u0c02\u0c1f\u0c30\u0c4d",
+  printNoPrinters:   "\u0c2a\u0c4d\u0c30\u0c3f\u0c02\u0c1f\u0c30\u0c4d\u0c32\u0c41 \u0c15\u0c28\u0c41\u0c17\u0c4a\u0c28\u0c32\u0c47\u0c26\u0c41",
+  printPages:        "\u0c2a\u0c47\u0c1c\u0c40\u0c32\u0c41",
+  printAll:          "\u0c05\u0c28\u0c4d\u0c28\u0c40",
+  printCurrentPage:  "\u0c2a\u0c4d\u0c30\u0c38\u0c4d\u0c24\u0c41\u0c24 \u0c2a\u0c47\u0c1c\u0c40",
+  printCustomRange:  "\u0c15\u0c38\u0c4d\u0c1f\u0c2e\u0c4d",
+  printCopies:       "\u0c2a\u0c4d\u0c30\u0c24\u0c41\u0c32\u0c41",
+  printOrientation:  "\u0c26\u0c3f\u0c36",
+  printPortrait:     "\u0c2a\u0c4b\u0c30\u0c4d\u0c1f\u0c4d\u0c30\u0c47\u0c1f\u0c4d",
+  printLandscape:    "\u0c32\u0c4d\u0c2f\u0c3e\u0c02\u0c21\u0c4d\u200c\u0c38\u0c4d\u0c15\u0c47\u0c2a\u0c4d",
+  printScale:        "\u0c38\u0c4d\u0c15\u0c47\u0c32\u0c4d",
+  printFitToPage:    "\u0c2a\u0c47\u0c1c\u0c40\u0c15\u0c3f \u0c38\u0c30\u0c3f\u0c2a\u0c4b\u0c02\u0c26\u0c41",
+  printActualSize:   "\u0c05\u0c38\u0c32\u0c41 \u0c2a\u0c30\u0c3f\u0c2e\u0c3e\u0c23\u0c02",
+  printCancelBtn:    "\u0c30\u0c26\u0c4d\u0c26\u0c41",
+  printConfirmBtn:   "\u0c2a\u0c4d\u0c30\u0c3f\u0c02\u0c1f\u0c4d",
 };
 
 // ── Turkish ───────────────────────────────────────────────────────────────────
@@ -1218,6 +1508,23 @@ const TR: Translations = {
   pmRotatePage:        "Sayfayı döndür",
   pmRestorePage:       "Sayfayı geri yükle",
   ctxCopy:           "Kopyala",
+  printTitle:        "Yazd\u0131r",
+  printCancel:       "\u0130ptal",
+  printPrinter:      "Yaz\u0131c\u0131",
+  printNoPrinters:   "Yaz\u0131c\u0131 bulunamad\u0131",
+  printPages:        "Sayfalar",
+  printAll:          "T\u00fcm\u00fc",
+  printCurrentPage:  "Ge\u00e7erli sayfa",
+  printCustomRange:  "\u00d6zel",
+  printCopies:       "Kopya",
+  printOrientation:  "Y\u00f6n",
+  printPortrait:     "Dikey",
+  printLandscape:    "Yatay",
+  printScale:        "\u00d6l\u00e7ek",
+  printFitToPage:    "Sayfaya s\u0131\u011fd\u0131r",
+  printActualSize:   "Ger\u00e7ek boyut",
+  printCancelBtn:    "\u0130ptal",
+  printConfirmBtn:   "Yazd\u0131r",
 };
 
 // ── Tamil ─────────────────────────────────────────────────────────────────────
@@ -1285,6 +1592,23 @@ const TA: Translations = {
   pmRotatePage:        "பக்கத்தை சுழற்று",
   pmRestorePage:       "பக்கத்தை மீட்டெடு",
   ctxCopy:           "\u0ba8\u0b95\u0bb2\u0bcd \u0b8e\u0b9f\u0bc1",
+  printTitle:        "\u0b85\u0b9a\u0bcd\u0b9a\u0bbf\u0b9f\u0bc1",
+  printCancel:       "\u0bb0\u0ba4\u0bcd\u0ba4\u0bc1",
+  printPrinter:      "\u0b85\u0b9a\u0bcd\u0b9a\u0bc1\u0baa\u0bcd\u0baa\u0bcb\u0b9f\u0bbf",
+  printNoPrinters:   "\u0b85\u0b9a\u0bcd\u0b9a\u0bc1\u0baa\u0bcd\u0baa\u0bcb\u0b9f\u0bbf \u0b95\u0ba3\u0bcd\u0b9f\u0bb1\u0bbf\u0baf\u0bb5\u0bbf\u0bb2\u0bcd\u0bb2\u0bc8",
+  printPages:        "\u0baa\u0b95\u0bcd\u0b95\u0b99\u0bcd\u0b95\u0bb3\u0bcd",
+  printAll:          "\u0b85\u0ba9\u0bc8\u0ba4\u0bcd\u0ba4\u0bc1\u0bae\u0bcd",
+  printCurrentPage:  "\u0ba8\u0b9f\u0baa\u0bcd\u0baa\u0bc1 \u0baa\u0b95\u0bcd\u0b95\u0bae\u0bcd",
+  printCustomRange:  "\u0ba4\u0ba9\u0bbf\u0baa\u0bcd\u0baa\u0baf\u0ba9\u0bcd",
+  printCopies:       "\u0ba8\u0b95\u0bb2\u0bcd\u0b95\u0bb3\u0bcd",
+  printOrientation:  "\u0ba4\u0bbf\u0b9a\u0bc8",
+  printPortrait:     "\u0ba8\u0bc7\u0bb0\u0bcd\u0bae\u0bc1\u0b95\u0bae\u0bcd",
+  printLandscape:    "\u0ba8\u0bbf\u0bb2\u0ba4\u0bcd\u0ba4\u0b9f\u0bae\u0bcd",
+  printScale:        "\u0b85\u0bb3\u0bb5\u0bc1",
+  printFitToPage:    "\u0baa\u0b95\u0bcd\u0b95\u0ba4\u0bcd\u0ba4\u0bbf\u0bb2\u0bcd \u0baa\u0bca\u0bb0\u0bc1\u0ba4\u0bcd\u0ba4\u0bc1",
+  printActualSize:   "\u0b89\u0ba3\u0bcd\u0bae\u0bc8 \u0b85\u0bb3\u0bb5\u0bc1",
+  printCancelBtn:    "\u0bb0\u0ba4\u0bcd\u0ba4\u0bc1",
+  printConfirmBtn:   "\u0b85\u0b9a\u0bcd\u0b9a\u0bbf\u0b9f\u0bc1",
 };
 
 // ── Vietnamese ────────────────────────────────────────────────────────────────
@@ -1352,6 +1676,23 @@ const VI: Translations = {
   pmRotatePage:        "Xoay trang",
   pmRestorePage:       "Khôi phục trang",
   ctxCopy:           "Sao ch\u00e9p",
+  printTitle:        "In",
+  printCancel:       "H\u1ee7y",
+  printPrinter:      "M\u00e1y in",
+  printNoPrinters:   "Kh\u00f4ng t\u00ecm th\u1ea5y m\u00e1y in",
+  printPages:        "Trang",
+  printAll:          "T\u1ea5t c\u1ea3",
+  printCurrentPage:  "Trang hi\u1ec7n t\u1ea1i",
+  printCustomRange:  "T\u00f9y ch\u1ec9nh",
+  printCopies:       "B\u1ea3n sao",
+  printOrientation:  "H\u01b0\u1edbng",
+  printPortrait:     "D\u1ecdc",
+  printLandscape:    "Ngang",
+  printScale:        "T\u1ef7 l\u1ec7",
+  printFitToPage:    "V\u1eeba trang",
+  printActualSize:   "K\u00edch th\u01b0\u1edbc th\u1ef1c",
+  printCancelBtn:    "H\u1ee7y",
+  printConfirmBtn:   "In",
 };
 
 // ── Korean ────────────────────────────────────────────────────────────────────
@@ -1419,6 +1760,23 @@ const KO: Translations = {
   pmRotatePage:        "페이지 회전",
   pmRestorePage:       "페이지 복원",
   ctxCopy:           "\ubcf5\uc0ac",
+  printTitle:        "\uc778\uc1c4",
+  printCancel:       "\ucde8\uc18c",
+  printPrinter:      "\ud504\ub9b0\ud130",
+  printNoPrinters:   "\ud504\ub9b0\ud130\ub97c \ucc3e\uc744 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4",
+  printPages:        "\ud398\uc774\uc9c0",
+  printAll:          "\ubaa8\ub450",
+  printCurrentPage:  "\ud604\uc7ac \ud398\uc774\uc9c0",
+  printCustomRange:  "\uc0ac\uc6a9\uc790 \uc9c0\uc815",
+  printCopies:       "\ubd80\uc218",
+  printOrientation:  "\ubc29\ud5a5",
+  printPortrait:     "\uc138\ub85c",
+  printLandscape:    "\uac00\ub85c",
+  printScale:        "\ubc30\uc728",
+  printFitToPage:    "\ud398\uc774\uc9c0\uc5d0 \ub9de\ucda4",
+  printActualSize:   "\uc2e4\uc81c \ud06c\uae30",
+  printCancelBtn:    "\ucde8\uc18c",
+  printConfirmBtn:   "\uc778\uc1c4",
 };
 
 // ── Registry ──────────────────────────────────────────────────────────────────

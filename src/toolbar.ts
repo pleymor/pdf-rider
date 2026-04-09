@@ -49,6 +49,7 @@ type ToolbarEvent =
   | { type: "layer-change"; dir: "front" | "back" }
   | { type: "signature" }
   | { type: "pages" }
+  | { type: "print" }
   | { type: "settings" };
 
 type EventHandler = (e: ToolbarEvent) => void;
@@ -336,7 +337,7 @@ export class Toolbar {
     compressBtn.addEventListener("click", () => this.emit({ type: "compress" }));
     const printBtn = this.btn(ICON_PRINT, "Print", "icon-btn");
     this.reg(printBtn, undefined, "ttPrint");
-    printBtn.addEventListener("click", () => window.print());
+    printBtn.addEventListener("click", () => this.emit({ type: "print" }));
     d.append(saveBtn, saveAsBtn, compressBtn, this.sep(), printBtn);
 
     // Settings — always visible, pinned to the right

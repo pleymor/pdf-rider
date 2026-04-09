@@ -90,9 +90,31 @@ export async function registerPrintVerb(): Promise<void> {
   return invoke<void>("register_print_verb");
 }
 
-/** Sends pre-rendered page images (base64 JPEG) to the default Windows printer silently. */
-export async function printPages(pagesB64: string[]): Promise<void> {
-  return invoke<void>("print_pages", { pagesB64 });
+export interface PrinterList {
+  printers: string[];
+  defaultPrinter: string;
+}
+
+/** Returns the list of available printers and the default printer name. */
+export async function listPrinters(): Promise<PrinterList> {
+  return invoke<PrinterList>("list_printers");
+}
+
+/** Sends pre-rendered page images (base64 JPEG) to a printer. */
+export async function printPages(
+  pagesB64: string[],
+  printerName?: string,
+  copies?: number,
+  orientation?: string,
+  fitMode?: string,
+): Promise<void> {
+  return invoke<void>("print_pages", {
+    pagesB64,
+    printerName: printerName ?? null,
+    copies: copies ?? null,
+    orientation: orientation ?? null,
+    fitMode: fitMode ?? null,
+  });
 }
 
 /** Opens Windows Settings → Default Apps. */

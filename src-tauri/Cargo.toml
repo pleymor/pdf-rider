@@ -25,7 +25,7 @@ lopdf = "0.39"
 image = { version = "0.25", features = ["png", "jpeg"] }
 base64 = "0.22"
 winreg = "0.52"
-winapi = { version = "0.3", features = ["winspool", "wingdi"] }
+winapi = { version = "0.3", features = ["winspool", "wingdi", "winnt", "shellapi"] }
 
 [profile.release]
 panic = "abort"
