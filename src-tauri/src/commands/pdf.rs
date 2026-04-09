@@ -127,10 +127,6 @@ pub fn read_annotations(file_path: String) -> Result<Vec<Annotation>, String> {
 }
 
 /// Applies per-page rotation and deletion to a PDF.
-/// Annotation coordinates are in PDF content-stream space (the overlay uses
-/// viewport.convertToPdfPoint / convertToViewportPoint), so changing `/Rotate`
-/// does NOT require coordinate transforms — pdf.js repositions them automatically.
-/// Annotations on deleted pages are removed; remaining page numbers are adjusted.
 #[tauri::command]
 pub fn modify_pages(
     input_path: String,
@@ -151,7 +147,6 @@ pub fn modify_pages(
         .map(|op| op.page)
         .collect();
 
-    // Apply per-page rotation
     let pages = doc.get_pages();
     for (&page_num, &page_id) in &pages {
         if let Some(&rot_delta) = rotation_map.get(&page_num) {
@@ -167,14 +162,12 @@ pub fn modify_pages(
         }
     }
 
-    // Delete pages
     if !delete_set.is_empty() {
         let mut to_delete: Vec<u32> = delete_set.iter().copied().collect();
         to_delete.sort();
         doc.delete_pages(&to_delete);
     }
 
-    // Adjust annotation metadata
     let mut meta = writer::load_meta(&doc);
 
     if !delete_set.is_empty() {
@@ -202,6 +195,66 @@ pub fn modify_pages(
     }
 
     writer::save_meta(&mut doc, &meta)?;
+    doc.save(&output_path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Extracts selected pages from a PDF into a new file, preserving vector text.
+#[tauri::command]
+pub fn extract_pdf_pages(
+    input_path: String,
+    output_path: String,
+    pages: Vec<u32>,
+) -> Result<(), String> {
+    let mut doc = Document::load(&input_path).map_err(|e| e.to_string())?;
+
+    let all_pages = doc.get_pages();
+    let total = all_pages.len() as u32;
+
+    if pages.len() as u32 >= total {
+        doc.save(&output_path).map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    let pages_to_keep: std::collections::HashSet<u32> = pages.into_iter().collect();
+
+    let mut pages_to_remove: Vec<(u32, u16)> = Vec::new();
+    for (&page_num, &page_id) in &all_pages {
+        if !pages_to_keep.contains(&page_num) {
+            pages_to_remove.push(page_id);
+        }
+    }
+
+    let catalog_id = doc.trailer.get(b"Root")
+        .and_then(|o| o.as_reference())
+        .map_err(|e| format!("No catalog: {e}"))?;
+    let pages_id = doc.get_object(catalog_id)
+        .and_then(|o| o.as_dict())
+        .and_then(|d| d.get(b"Pages"))
+        .and_then(|o| o.as_reference())
+        .map_err(|e| format!("No Pages: {e}"))?;
+
+    let remove_set: std::collections::HashSet<(u32, u16)> = pages_to_remove.iter().copied().collect();
+
+    if let Ok(lopdf::Object::Dictionary(ref mut pages_dict)) = doc.get_object_mut(pages_id) {
+        if let Ok(lopdf::Object::Array(ref kids)) = pages_dict.get(b"Kids") {
+            let new_kids: Vec<lopdf::Object> = kids.iter()
+                .filter(|kid| {
+                    if let Ok(id) = kid.as_reference() {
+                        !remove_set.contains(&id)
+                    } else {
+                        true
+                    }
+                })
+                .cloned()
+                .collect();
+            let count = new_kids.len() as i64;
+            pages_dict.set(b"Kids", lopdf::Object::Array(new_kids));
+            pages_dict.set(b"Count", lopdf::Object::Integer(count));
+        }
+    }
+
+    doc.prune_objects();
     doc.save(&output_path).map_err(|e| e.to_string())?;
     Ok(())
 }

@@ -827,9 +827,16 @@ export class PdfViewer {
 
   async renderAllPagesForPrint(dpi = 200): Promise<string[]> {
     if (!this.pdfDoc) return [];
+    const pages = Array.from({ length: this._pageCount }, (_, i) => i + 1);
+    return this.renderPagesForPrint(pages, dpi);
+  }
+
+  async renderPagesForPrint(pageNumbers: number[], dpi = 200): Promise<string[]> {
+    if (!this.pdfDoc) return [];
     const scale   = dpi / 72;
     const results: string[] = [];
-    for (let i = 1; i <= this._pageCount; i++) {
+    for (const i of pageNumbers) {
+      if (i < 1 || i > this._pageCount) continue;
       const page     = await this.pdfDoc.getPage(i);
       const viewport = page.getViewport({ scale, rotation: (page.rotate + this._rotation) % 360 });
       const canvas   = document.createElement("canvas");

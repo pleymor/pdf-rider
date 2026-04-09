@@ -1,6 +1,7 @@
 import { PdfViewer, PdfPageView } from "./pdf-viewer";
 import { Toolbar } from "./toolbar";
 import { CompressModal } from "./compress-modal";
+import { PrintModal } from "./print-modal";
 import { SignatureModal } from "./signature-modal";
 import { SettingsModal } from "./settings";
 import { PageManagerModal } from "./page-manager";
@@ -25,6 +26,8 @@ import {
   readAnnotations,
   getStartupArgs,
   printPages,
+  extractPdfPages,
+  printPdfFile,
   modifyPages,
 } from "./tauri-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -70,6 +73,7 @@ const toolState = defaultToolState();
 const toolbar   = new Toolbar();
 const history   = new AnnotationHistory();
 const compressModal      = new CompressModal();
+const printModal         = new PrintModal();
 const sigModal           = new SignatureModal();
 const settingsModal      = new SettingsModal();
 const pageManagerModal   = new PageManagerModal();
@@ -169,6 +173,7 @@ document.getElementById("viewer-scroll")!.addEventListener("focused-page-changed
   toolbar.applyTranslations(t);
   compressModal.applyTranslations(t);
   pageManagerModal.applyTranslations(t);
+  printModal.applyTranslations(t);
   applyTranslationsToDOM(t);
 }
 settingsModal.onChange(s => {
@@ -176,6 +181,7 @@ settingsModal.onChange(s => {
   toolbar.applyTranslations(t);
   compressModal.applyTranslations(t);
   pageManagerModal.applyTranslations(t);
+  printModal.applyTranslations(t);
   applyTranslationsToDOM(t);
 });
 
@@ -388,19 +394,37 @@ pageManagerModal.onConfirm(async (operations) => {
     const base = await basename(filePath);
     const tmpPath = `${tmp}pdf-rider-pages-${base}`;
 
-    // Persist current state to a TEMP file (not the original)
     const fv: FormFieldValue[] = [...formValues.entries()].map(([name, value]) => ({ name, value }));
     await saveAnnotatedPdf(displayFilePath ?? filePath, tmpPath, store.getAll(), viewer.rotation, fv);
-    // Apply page modifications on the temp file
     await modifyPages(tmpPath, tmpPath, operations);
-    // Reload from the modified temp
     await loadPdf(tmpPath);
-    // Restore original path so Save writes to the real file
     filePath = originalPath;
     setDirty(true);
     showToast("Pages updated.");
   } catch (err) {
     showToast(`Page modification failed: ${err}`, true);
+  }
+});
+
+printModal.onConfirm(async (settings) => {
+  if (!viewer.isLoaded() || !filePath) return;
+  const isPdfPrinter = /print to pdf|pdf/i.test(settings.printerName);
+  try {
+    if (isPdfPrinter) {
+      const out = await savePdfDialog(filePath);
+      if (!out) return;
+      await extractPdfPages(filePath, out, settings.pageRange);
+      showToast("PDF saved.");
+    } else {
+      const tmp = await tempDir();
+      const name = await basename(filePath);
+      const tmpPdf = `${tmp}pdfrider-print-${name}`;
+      await extractPdfPages(filePath, tmpPdf, settings.pageRange);
+      await printPdfFile(tmpPdf, settings.printerName, settings.copies);
+      showToast("Sent to printer.");
+    }
+  } catch (err) {
+    showToast(`Print failed: ${err}`, true);
   }
 });
 
@@ -529,6 +553,10 @@ toolbar.on(async (e) => {
       sigModal.open();
       break;
 
+    case "print":
+      if (viewer.isLoaded()) printModal.open(viewer.pageCount, viewer.currentPage, { w: viewer.pageWidthPt, h: viewer.pageHeightPt });
+      break;
+
     case "settings":
       settingsModal.open();
       break;
@@ -574,7 +602,7 @@ document.addEventListener("keydown", async (e) => {
   }
   if (ctrl && !shift && e.key === "p") {
     e.preventDefault();
-    window.print();
+    if (viewer.isLoaded()) printModal.open(viewer.pageCount, viewer.currentPage, { w: viewer.pageWidthPt, h: viewer.pageHeightPt });
     return;
   }
   if (ctrl && shift && e.key === "E") {
