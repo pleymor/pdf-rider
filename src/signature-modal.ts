@@ -78,6 +78,8 @@ export class SignatureModal {
   /** Last placed signature strokes, restored on next open. */
   private lastStrokes: [number, number][][] = [];
 
+  private static STORAGE_KEY = "pdf-rider-last-signature";
+
   private handlers: SignatureReadyHandler[] = [];
 
   constructor() {
@@ -85,8 +87,22 @@ export class SignatureModal {
     this.canvas = document.getElementById("signature-canvas") as HTMLCanvasElement;
     this.ctx = this.canvas.getContext("2d")!;
 
+    this.loadLastStrokes();
     this.initDrawing();
     this.bindButtons();
+  }
+
+  private loadLastStrokes(): void {
+    try {
+      const raw = localStorage.getItem(SignatureModal.STORAGE_KEY);
+      if (raw) this.lastStrokes = JSON.parse(raw);
+    } catch { /* ignore corrupt data */ }
+  }
+
+  private saveLastStrokes(): void {
+    try {
+      localStorage.setItem(SignatureModal.STORAGE_KEY, JSON.stringify(this.lastStrokes));
+    } catch { /* storage full — silent fail */ }
   }
 
   onSignatureReady(handler: SignatureReadyHandler): void {
@@ -243,6 +259,7 @@ export class SignatureModal {
     document.getElementById("sig-place-btn")!.addEventListener("click", () => {
       if (!this.hasContent) return;
       this.lastStrokes = this.strokes.map(s => s.slice());
+      this.saveLastStrokes();
       const b64 = this.canvas
         .toDataURL("image/png")
         .split(",")[1]; // strip data:image/png;base64,
