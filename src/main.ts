@@ -43,17 +43,6 @@ function snapZoom(current: number, dir: 1 | -1): number {
   }
 }
 
-async function applyFitMode(): Promise<void> {
-  if (!viewer.isLoaded() || fitMode === "none") return;
-  const scroll = document.getElementById("viewer-scroll")!;
-  if (fitMode === "fit-width") {
-    await viewer.setScale((scroll.clientWidth - 40) / viewer.pageWidthPt);
-  } else {
-    await viewer.setScale(scroll.clientHeight / viewer.pageHeightPt);
-  }
-  toolbar.updateZoom(viewer.scale);
-}
-
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const appWindow = getCurrentWindow();
@@ -74,10 +63,6 @@ let editingShapeAnn: RectAnnotation | CircleAnnotation | null = null;
 // ── Instances ─────────────────────────────────────────────────────────────────
 
 const viewer = new PdfViewer();
-viewer.onResizeCb = async () => {
-  if (fitMode !== "none") await applyFitMode();
-  else viewer.reflow();
-};
 const store  = new AnnotationStore();
 const toolState = defaultToolState();
 const toolbar   = new Toolbar();
@@ -85,6 +70,22 @@ const history   = new AnnotationHistory();
 const compressModal  = new CompressModal();
 const sigModal       = new SignatureModal();
 const settingsModal  = new SettingsModal();
+
+async function applyFitMode(): Promise<void> {
+  if (!viewer.isLoaded() || fitMode === "none") return;
+  const scroll = document.getElementById("viewer-scroll")!;
+  if (fitMode === "fit-width") {
+    await viewer.setScale((scroll.clientWidth - 40) / viewer.pageWidthPt);
+  } else {
+    await viewer.setScale(scroll.clientHeight / viewer.pageHeightPt);
+  }
+  toolbar.updateZoom(viewer.scale);
+}
+
+viewer.onResizeCb = async () => {
+  if (fitMode !== "none") await applyFitMode();
+  else viewer.reflow();
+};
 
 function onFormChange(name: string, val: string): void {
   formValues.set(name, val);
@@ -629,6 +630,7 @@ window.addEventListener("keydown", async (e: KeyboardEvent) => {
   if (e.ctrlKey && (e.key === "+" || e.key === "=" || e.key === "-")) {
     if (!viewer.isLoaded()) return;
     e.preventDefault();
+    fitMode = "none"; toolbar.updateFitMode(fitMode);
     await viewer.setScale(snapZoom(viewer.scale, e.key === "-" ? -1 : 1));
     toolbar.updateZoom(viewer.scale);
     return;
