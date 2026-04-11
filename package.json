@@ -1,7 +1,7 @@
 {
   "name": "pdf-rider",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.24",
   "type": "module",
   "scripts": {
     "dev": "vite",
