@@ -3,6 +3,7 @@ import { Toolbar } from "./toolbar";
 import { CompressModal } from "./compress-modal";
 import { PrintModal } from "./print-modal";
 import { SignatureModal } from "./signature-modal";
+import { SignatureStore } from "./signature-store";
 import { SettingsModal } from "./settings";
 import { PageManagerModal } from "./page-manager";
 import { getTranslations, applyTranslationsToDOM } from "./i18n";
@@ -74,7 +75,8 @@ const toolbar   = new Toolbar();
 const history   = new AnnotationHistory();
 const compressModal      = new CompressModal();
 const printModal         = new PrintModal();
-const sigModal           = new SignatureModal();
+const sigStore           = new SignatureStore();
+const sigModal           = new SignatureModal(sigStore);
 const settingsModal      = new SettingsModal();
 const pageManagerModal   = new PageManagerModal();
 
