@@ -9,25 +9,19 @@ import {
 } from "./models";
 import type { Translations } from "./i18n";
 import {
-  ICON_OPEN_FILE,
   ICON_PAGE_UP,
   ICON_PAGE_DOWN,
   ICON_ZOOM_OUT,
   ICON_ZOOM_IN,
   ICON_EDITOR_FREE_TEXT,
-  ICON_EDITOR_INK,
   ICON_EDITOR_SIGNATURE,
-  ICON_PRINT,
   ICON_RECT,
   ICON_CIRCLE,
-  ICON_ROTATE_CW,
   ICON_ALIGN_LEFT,
   ICON_ALIGN_CENTER,
   ICON_ALIGN_RIGHT,
   ICON_FIT_WIDTH,
   ICON_FIT_HEIGHT,
-  ICON_PAGES,
-  ICON_SETTINGS,
 } from "./icons";
 
 type ToolbarEvent =
@@ -50,16 +44,40 @@ type ToolbarEvent =
   | { type: "signature" }
   | { type: "pages" }
   | { type: "print" }
-  | { type: "settings" };
+  | { type: "settings" }
+  | { type: "undo" }
+  | { type: "redo" };
 
 type EventHandler = (e: ToolbarEvent) => void;
+
+interface MenuItemDef {
+  label: keyof Translations;
+  shortcut?: string;
+  action: () => void;
+  requiresDoc?: boolean;
+}
+
+interface MenuDef {
+  id: string;
+  label: keyof Translations;
+  items: (MenuItemDef | null)[]; // null = separator
+}
 
 export class Toolbar {
   private state: ActiveToolState = defaultToolState();
   private handlers: EventHandler[] = [];
 
   private el: HTMLElement;
-  private documentSection!: HTMLElement;
+  private menuBarEl: HTMLElement;
+  private contextEl: HTMLElement;
+
+  // Menu bar state
+  private activeMenuId: string | null = null;
+  private dropdowns = new Map<string, HTMLElement>();
+  private menuButtons = new Map<string, HTMLButtonElement>();
+  private docMenuEntries: HTMLButtonElement[] = [];
+
+  // Context toolbar elements
   private annotationSection!: HTMLElement;
   private modeBtn!: HTMLButtonElement;
   private isAnnotationMode = false;
@@ -91,7 +109,11 @@ export class Toolbar {
 
   constructor() {
     this.el = document.getElementById("toolbar-container")!;
-    this.build();
+    this.menuBarEl = document.getElementById("menubar-row")!;
+    this.contextEl = document.getElementById("context-toolbar")!;
+    this.buildMenuBar();
+    this.buildContextToolbar();
+    this.setupMenuInteraction();
   }
 
   on(handler: EventHandler): void {
@@ -133,7 +155,10 @@ export class Toolbar {
   }
 
   setLoaded(loaded: boolean): void {
-    this.documentSection.style.display = loaded ? "contents" : "none";
+    this.contextEl.style.display = loaded ? "flex" : "none";
+    for (const btn of this.docMenuEntries) {
+      btn.disabled = !loaded;
+    }
   }
 
   getStyle(): ActiveToolState {
@@ -190,21 +215,225 @@ export class Toolbar {
     return b;
   }
 
-  private build(): void {
-    // Open (always visible)
-    const openBtn = this.btn(`${ICON_OPEN_FILE}<span>Open</span>`, "Open PDF");
-    this.reg(openBtn.querySelector("span") as HTMLSpanElement, "btnOpen");
-    this.reg(openBtn, undefined, "ttOpen");
-    openBtn.addEventListener("click", () => this.emit({ type: "open" }));
-    this.el.append(openBtn);
+  // ── Menu Bar ────────────────────────────────────────────────────────────────
 
-    // Everything below requires an open document — hidden until setLoaded(true)
-    this.documentSection = document.createElement("div");
-    this.documentSection.style.display = "none";
-    this.el.append(this.documentSection);
-    const d = this.documentSection;
+  private getMenuDefs(): MenuDef[] {
+    return [
+      {
+        id: "file",
+        label: "menuFile",
+        items: [
+          { label: "btnOpen", shortcut: "Ctrl+O", action: () => this.emit({ type: "open" }) },
+          null,
+          { label: "btnSave", shortcut: "Ctrl+S", action: () => this.emit({ type: "save" }), requiresDoc: true },
+          { label: "btnSaveAs", shortcut: "Ctrl+Shift+S", action: () => this.emit({ type: "save-as" }), requiresDoc: true },
+          { label: "btnCompress", shortcut: "Ctrl+Shift+E", action: () => this.emit({ type: "compress" }), requiresDoc: true },
+          null,
+          { label: "menuPrint", shortcut: "Ctrl+P", action: () => this.emit({ type: "print" }), requiresDoc: true },
+          null,
+          { label: "menuSettings", action: () => this.emit({ type: "settings" }) },
+        ],
+      },
+      {
+        id: "edit",
+        label: "menuEdit",
+        items: [
+          { label: "menuUndo", shortcut: "Ctrl+Z", action: () => this.emit({ type: "undo" }), requiresDoc: true },
+          { label: "menuRedo", shortcut: "Ctrl+Y", action: () => this.emit({ type: "redo" }), requiresDoc: true },
+        ],
+      },
+      {
+        id: "view",
+        label: "menuView",
+        items: [
+          { label: "menuZoomIn", shortcut: "Ctrl++", action: () => this.emit({ type: "zoom-in" }), requiresDoc: true },
+          { label: "menuZoomOut", shortcut: "Ctrl+\u2212", action: () => this.emit({ type: "zoom-out" }), requiresDoc: true },
+          { label: "menuResetZoom", shortcut: "Ctrl+0", action: () => this.emit({ type: "zoom-set", scale: CSS_UNITS }), requiresDoc: true },
+          null,
+          { label: "menuFitWidth", action: () => this.emit({ type: "fit-width" }), requiresDoc: true },
+          { label: "menuFitHeight", action: () => this.emit({ type: "fit-height" }), requiresDoc: true },
+          null,
+          { label: "menuRotate", action: () => this.emit({ type: "rotate" }), requiresDoc: true },
+        ],
+      },
+      {
+        id: "pages",
+        label: "menuPages",
+        items: [
+          { label: "menuManagePages", action: () => this.emit({ type: "pages" }), requiresDoc: true },
+        ],
+      },
+    ];
+  }
 
-    d.append(this.sep());
+  private buildMenuBar(): void {
+    const menus = this.getMenuDefs();
+    for (const menu of menus) {
+      const wrapper = document.createElement("div");
+      wrapper.style.position = "relative";
+      wrapper.style.display = "inline-block";
+
+      // Top-level menu button
+      const menuBtn = document.createElement("button");
+      menuBtn.className = "menubar-item";
+      menuBtn.dataset["menuId"] = menu.id;
+      this.reg(menuBtn, menu.label);
+      this.menuButtons.set(menu.id, menuBtn);
+
+      // Dropdown panel
+      const dropdown = document.createElement("div");
+      dropdown.className = "menu-dropdown";
+
+      for (const item of menu.items) {
+        if (item === null) {
+          const sep = document.createElement("div");
+          sep.className = "menu-sep";
+          dropdown.append(sep);
+          continue;
+        }
+
+        const entry = document.createElement("button");
+        entry.className = "menu-entry";
+        entry.tabIndex = -1;
+
+        const labelSpan = document.createElement("span");
+        this.reg(labelSpan, item.label);
+        entry.append(labelSpan);
+
+        if (item.shortcut) {
+          const shortcutSpan = document.createElement("span");
+          shortcutSpan.className = "shortcut";
+          shortcutSpan.textContent = item.shortcut;
+          entry.append(shortcutSpan);
+        }
+
+        const action = item.action;
+        entry.addEventListener("click", () => {
+          this.closeAllMenus();
+          action();
+        });
+
+        if (item.requiresDoc) {
+          entry.disabled = true; // disabled until setLoaded(true)
+          this.docMenuEntries.push(entry);
+        }
+
+        dropdown.append(entry);
+      }
+
+      this.dropdowns.set(menu.id, dropdown);
+      wrapper.append(menuBtn, dropdown);
+      this.menuBarEl.append(wrapper);
+    }
+  }
+
+  private setupMenuInteraction(): void {
+    // Click on menu button: toggle
+    this.menuBarEl.addEventListener("click", (e) => {
+      const btn = (e.target as HTMLElement).closest(".menubar-item") as HTMLButtonElement | null;
+      if (!btn) return;
+      const id = btn.dataset["menuId"]!;
+      if (this.activeMenuId === id) {
+        this.closeAllMenus();
+      } else {
+        this.openMenu(id);
+      }
+    });
+
+    // Hover: switch when another menu is already open
+    this.menuBarEl.addEventListener("mouseover", (e) => {
+      if (!this.activeMenuId) return;
+      const btn = (e.target as HTMLElement).closest(".menubar-item") as HTMLButtonElement | null;
+      if (!btn) return;
+      const id = btn.dataset["menuId"]!;
+      if (id !== this.activeMenuId) {
+        this.openMenu(id);
+      }
+    });
+
+    // Click outside: close
+    document.addEventListener("mousedown", (e) => {
+      if (!this.activeMenuId) return;
+      if (this.menuBarEl.contains(e.target as Node)) return;
+      this.closeAllMenus();
+    });
+
+    // Keyboard navigation
+    document.addEventListener("keydown", (e) => {
+      if (!this.activeMenuId) return;
+
+      const dropdown = this.dropdowns.get(this.activeMenuId)!;
+      const entries = Array.from(dropdown.querySelectorAll<HTMLButtonElement>(".menu-entry:not(:disabled)"));
+      const currentIdx = entries.indexOf(document.activeElement as HTMLButtonElement);
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        this.closeAllMenus();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const next = currentIdx < entries.length - 1 ? currentIdx + 1 : 0;
+        entries[next]?.focus();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const prev = currentIdx > 0 ? currentIdx - 1 : entries.length - 1;
+        entries[prev]?.focus();
+      } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const menuIds = Array.from(this.menuButtons.keys());
+        const curIdx = menuIds.indexOf(this.activeMenuId!);
+        const nextIdx = e.key === "ArrowRight"
+          ? (curIdx + 1) % menuIds.length
+          : (curIdx - 1 + menuIds.length) % menuIds.length;
+        this.openMenu(menuIds[nextIdx]);
+      }
+    });
+  }
+
+  private openMenu(id: string): void {
+    // Close previous
+    if (this.activeMenuId && this.activeMenuId !== id) {
+      this.dropdowns.get(this.activeMenuId)?.classList.remove("open");
+      this.menuButtons.get(this.activeMenuId)?.classList.remove("open");
+    }
+
+    this.activeMenuId = id;
+    const dropdown = this.dropdowns.get(id)!;
+    const btn = this.menuButtons.get(id)!;
+    dropdown.classList.add("open");
+    btn.classList.add("open");
+
+    // Check if dropdown overflows right edge
+    requestAnimationFrame(() => {
+      const rect = dropdown.getBoundingClientRect();
+      if (rect.right > window.innerWidth) {
+        dropdown.style.left = "auto";
+        dropdown.style.right = "0";
+      } else {
+        dropdown.style.left = "0";
+        dropdown.style.right = "auto";
+      }
+    });
+
+    // Focus first enabled entry
+    const first = dropdown.querySelector<HTMLButtonElement>(".menu-entry:not(:disabled)");
+    first?.focus();
+  }
+
+  private closeAllMenus(): void {
+    if (!this.activeMenuId) return;
+    this.dropdowns.get(this.activeMenuId)?.classList.remove("open");
+    this.menuButtons.get(this.activeMenuId)?.classList.remove("open");
+    this.activeMenuId = null;
+  }
+
+  // ── Context Toolbar ─────────────────────────────────────────────────────────
+
+  private buildContextToolbar(): void {
+    const ctx = this.contextEl;
 
     // Page navigation
     const prevBtn = this.btn(ICON_PAGE_UP, "Previous page", "icon-btn");
@@ -222,7 +451,7 @@ export class Toolbar {
     });
 
     this.pageTotal = document.createElement("span");
-    this.pageTotal.textContent = "/ –";
+    this.pageTotal.textContent = "/ \u2013";
 
     const nextBtn = this.btn(ICON_PAGE_DOWN, "Next page", "icon-btn");
     this.reg(nextBtn, undefined, "ttPageNext");
@@ -235,7 +464,7 @@ export class Toolbar {
     this.pageNavSection = document.createElement("div");
     this.pageNavSection.style.cssText = "display:none;align-items:center;gap:4px;";
     this.pageNavSection.append(navWrapper, this.sep());
-    d.append(this.pageNavSection);
+    ctx.append(this.pageNavSection);
 
     // Zoom
     const zoomOut = this.btn(ICON_ZOOM_OUT, "Zoom out (Ctrl+\u2212)", "icon-btn");
@@ -259,7 +488,6 @@ export class Toolbar {
       }
     });
     this.zoomInput.addEventListener("blur", () => {
-      // Reset to last known scale if not committed
       this.zoomInput.value = `${Math.round(this._lastScale / CSS_UNITS * 100)}%`;
     });
 
@@ -274,28 +502,21 @@ export class Toolbar {
     this.reg(this.fitHeightBtn, undefined, "ttFitHeight");
     this.fitHeightBtn.addEventListener("click", () => this.emit({ type: "fit-height" }));
 
-    // Rotate
-    const rotateBtn = this.btn(ICON_ROTATE_CW, "Rotate 90\u00b0 clockwise", "icon-btn");
-    this.reg(rotateBtn, undefined, "ttRotate");
-    rotateBtn.addEventListener("click", () => this.emit({ type: "rotate" }));
-
-    const pagesBtn = this.btn(ICON_PAGES, "Manage pages", "icon-btn");
-    this.reg(pagesBtn, undefined, "ttPages");
-    pagesBtn.addEventListener("click", () => this.emit({ type: "pages" }));
-
-    d.append(zoomOut, this.zoomInput, zoomIn, this.fitWidthBtn, this.fitHeightBtn, rotateBtn, pagesBtn, this.sep());
+    ctx.append(zoomOut, this.zoomInput, zoomIn, this.fitWidthBtn, this.fitHeightBtn, this.sep());
 
     // Annotation mode toggle
     this.modeBtn = this.btn("Annotate", "Annotation mode");
     this.reg(this.modeBtn, "btnAnnotate", "ttAnnotate");
     this.modeBtn.addEventListener("click", () => this.toggleMode());
-    d.append(this.modeBtn, this.sep());
+    ctx.append(this.modeBtn);
 
     // Annotation-only section (hidden in read mode)
     this.annotationSection = document.createElement("div");
     this.annotationSection.style.cssText = "display:none;align-items:center;gap:4px;";
-    d.append(this.annotationSection);
+    ctx.append(this.annotationSection);
     const ann = this.annotationSection;
+
+    ann.append(this.sep());
 
     // Drawing tools
     const tools: [ToolKind, string, string, keyof Translations][] = [
@@ -322,30 +543,6 @@ export class Toolbar {
     // Contextual style sections (hidden by default)
     this.buildTextStyleSection(ann);
     this.buildShapeStyleSection(ann);
-
-    ann.append(this.sep());
-
-    // Save / Save As / Print
-    const saveBtn = this.btn("Save", "Save PDF");
-    this.reg(saveBtn, "btnSave", "ttSave");
-    saveBtn.addEventListener("click", () => this.emit({ type: "save" }));
-    const saveAsBtn = this.btn("Save As\u2026", "Save PDF as\u2026");
-    this.reg(saveAsBtn, "btnSaveAs", "ttSaveAs");
-    saveAsBtn.addEventListener("click", () => this.emit({ type: "save-as" }));
-    const compressBtn = this.btn("Compress\u2026", "Compress PDF");
-    this.reg(compressBtn, "btnCompress", "ttCompress");
-    compressBtn.addEventListener("click", () => this.emit({ type: "compress" }));
-    const printBtn = this.btn(ICON_PRINT, "Print", "icon-btn");
-    this.reg(printBtn, undefined, "ttPrint");
-    printBtn.addEventListener("click", () => this.emit({ type: "print" }));
-    d.append(saveBtn, saveAsBtn, compressBtn, this.sep(), printBtn);
-
-    // Settings — always visible, pinned to the right
-    const settingsBtn = this.btn(ICON_SETTINGS, "Settings", "icon-btn");
-    this.reg(settingsBtn, undefined, "ttSettings");
-    settingsBtn.style.marginLeft = "auto";
-    settingsBtn.addEventListener("click", () => this.emit({ type: "settings" }));
-    this.el.append(settingsBtn);
   }
 
   private buildTextStyleSection(container: HTMLElement): void {
@@ -487,6 +684,8 @@ export class Toolbar {
 
     container.append(this.shapeStyleSection);
   }
+
+  // ── Shared logic ────────────────────────────────────────────────────────────
 
   private commitZoomInput(): void {
     const raw = this.zoomInput.value.replace("%", "").trim();

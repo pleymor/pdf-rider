@@ -575,6 +575,18 @@ toolbar.on(async (e) => {
     case "settings":
       settingsModal.open();
       break;
+
+    case "undo": {
+      const prev = history.undo(store.getAll());
+      if (prev) { store.replaceAll(prev); syncAllPageOverlays(); setDirty(true); }
+      break;
+    }
+
+    case "redo": {
+      const next = history.redo(store.getAll());
+      if (next) { store.replaceAll(next); syncAllPageOverlays(); setDirty(true); }
+      break;
+    }
   }
 });
 
