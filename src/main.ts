@@ -414,6 +414,10 @@ pageManagerModal.onConfirm(async (operations) => {
     await modifyPages(tmpPath, tmpPath, operations);
     await loadPdf(tmpPath);
     filePath = originalPath;
+    // The page-modified content lives in tmpPath; route subsequent saves to read from it
+    // instead of the unmodified original. (loadPdf only sets displayFilePath when the
+    // file already contains stored annotations.)
+    if (!displayFilePath) displayFilePath = tmpPath;
     setDirty(true);
     showToast("Pages updated.");
   } catch (err) {
