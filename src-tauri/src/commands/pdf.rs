@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use lopdf::{Document, IncrementalDocument, Object};
+use lopdf::{Document, IncrementalDocument, Object, ObjectId};
 use serde::{Deserialize, Serialize};
 
 use crate::pdf::{models::Annotation, writer, writer::FormFieldValue};
@@ -33,10 +33,7 @@ pub fn save_annotated_pdf(
     rotation_delta: i64,
     form_fields: Vec<FormFieldValue>,
 ) -> Result<(), String> {
-    // Fast-path: nothing to apply → byte-perfect copy. Avoids lopdf's
-    // full-rewrite save, which corrupts content streams on PDFs that use
-    // object streams (`/ObjStm`) + indirect /Length entries (iLovePDF /
-    // Acrobat output).
+    // Fast-path: nothing to apply → byte-perfect copy. Avoids any PDF rewrite.
     if annotations.is_empty() && rotation_delta == 0 && form_fields.is_empty() {
         let prev_meta_empty = Document::load(&input_path)
             .map(|d| {
@@ -50,24 +47,38 @@ pub fn save_annotated_pdf(
         }
     }
 
-    let mut doc = Document::load(&input_path).map_err(|e| e.to_string())?;
+    // We MUST go through `IncrementalDocument` rather than `Document::load +
+    // Document::save`. The full-rewrite save in lopdf 0.39 drops streams and
+    // loses indirect /Length objects on PDFs that use object streams (iLovePDF
+    // / Acrobat output), producing files whose content streams render as
+    // garbage. The incremental path preserves the input bytes verbatim and
+    // only appends our modifications.
+    let mut inc = IncrementalDocument::load(&input_path).map_err(|e| e.to_string())?;
 
     // Apply rotation to every page's Rotate entry before burning annotations.
     if rotation_delta != 0 {
-        let page_ids: Vec<(u32, u16)> = doc.get_pages().values().copied().collect();
+        let page_ids: Vec<ObjectId> = inc
+            .get_prev_documents()
+            .get_pages()
+            .values()
+            .copied()
+            .collect();
         for page_id in page_ids {
-            if let Ok(lopdf::Object::Dictionary(ref mut dict)) = doc.get_object_mut(page_id) {
-                let current = dict.get(b"Rotate")
+            inc.opt_clone_object_to_new_document(page_id)
+                .map_err(|e| e.to_string())?;
+            if let Ok(Object::Dictionary(dict)) = inc.new_document.get_object_mut(page_id) {
+                let current = dict
+                    .get(b"Rotate")
                     .ok()
                     .and_then(|o| o.as_i64().ok())
                     .unwrap_or(0);
                 let new_rotate = (current + rotation_delta).rem_euclid(360);
-                dict.set(b"Rotate", lopdf::Object::Integer(new_rotate));
+                dict.set(b"Rotate", Object::Integer(new_rotate));
             }
         }
     }
 
-    let mut meta = writer::load_meta(&doc);
+    let mut meta = writer::load_meta(inc.get_prev_documents());
 
     // Group annotations by page
     let mut by_page: HashMap<u32, Vec<Annotation>> = HashMap::new();
@@ -75,10 +86,12 @@ pub fn save_annotated_pdf(
         by_page.entry(ann.page()).or_default().push(ann.clone());
     }
 
-    let pages = doc.get_pages();
+    let pages = inc.get_prev_documents().get_pages();
     let mut new_stream_ids: HashMap<u32, [u32; 2]> = HashMap::new();
 
-    // Write (or update) annotation streams for each page that has annotations
+    // Write (or update) annotation streams for each page that has annotations.
+    // Page + existing stream must be cloned into new_document before the helper
+    // mutates them, otherwise get_object_mut would miss them.
     for (&page_num, anns) in &by_page {
         let page_id = pages
             .get(&page_num)
@@ -87,31 +100,103 @@ pub fn save_annotated_pdf(
 
         let existing = meta.stream_ids.get(&page_num).map(|arr| (arr[0], arr[1] as u16));
 
-        if let Some(sid) = writer::write_annotations_for_page(&mut doc, page_id, anns, existing)? {
+        inc.opt_clone_object_to_new_document(page_id)
+            .map_err(|e| e.to_string())?;
+        if let Some(sid) = existing {
+            inc.opt_clone_object_to_new_document(sid)
+                .map_err(|e| e.to_string())?;
+        }
+
+        if let Some(sid) =
+            writer::write_annotations_for_page(&mut inc.new_document, page_id, anns, existing)?
+        {
             new_stream_ids.insert(page_num, [sid.0, sid.1 as u32]);
         }
     }
 
-    // For pages that previously had annotations but now have none, empty their streams
+    // For pages that previously had annotations but now have none, empty their streams.
     for (&page_num, arr) in &meta.stream_ids {
         if !by_page.contains_key(&page_num) {
             let sid = (arr[0], arr[1] as u16);
-            if let Ok(obj) = doc.get_object_mut(sid) {
-                if let lopdf::Object::Stream(s) = obj {
-                    s.content = vec![];
-                }
+            inc.opt_clone_object_to_new_document(sid)
+                .map_err(|e| e.to_string())?;
+            if let Ok(Object::Stream(s)) = inc.new_document.get_object_mut(sid) {
+                s.content = vec![];
             }
         }
     }
 
     meta.annotations = annotations;
-    meta.stream_ids  = new_stream_ids;
-    writer::save_meta(&mut doc, &meta)?;
+    meta.stream_ids = new_stream_ids;
 
-    // Write form field values into the PDF's AcroForm structure
-    writer::write_form_fields(&mut doc, &form_fields)?;
+    // Catalog must live in new_document for save_meta (CCAnnot) and
+    // write_form_fields (AcroForm) to mutate it.
+    let cat_id = inc
+        .get_prev_documents()
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .map_err(|e| format!("No catalog: {e}"))?;
+    inc.opt_clone_object_to_new_document(cat_id)
+        .map_err(|e| e.to_string())?;
+    writer::save_meta(&mut inc.new_document, &meta)?;
 
-    doc.save(&output_path).map_err(|e| e.to_string())?;
+    if !form_fields.is_empty() {
+        clone_acroform_tree(&mut inc, cat_id).map_err(|e| e.to_string())?;
+        writer::write_form_fields(&mut inc.new_document, &form_fields)?;
+    }
+
+    inc.save(&output_path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Pre-clone every `/AcroForm` field dict so `write_form_fields` can `get_object_mut`
+/// freely on `inc.new_document` without crossing back into `prev_documents`.
+fn clone_acroform_tree(inc: &mut IncrementalDocument, cat_id: ObjectId) -> lopdf::Result<()> {
+    let acroform_id = {
+        let dict = inc.get_prev_documents().get_object(cat_id).and_then(Object::as_dict)?;
+        match dict.get(b"AcroForm") {
+            Ok(Object::Reference(id)) => *id,
+            // Inline AcroForm dict: write_form_fields will promote it itself once the
+            // catalog is in new_document.
+            _ => return Ok(()),
+        }
+    };
+    inc.opt_clone_object_to_new_document(acroform_id)?;
+
+    let field_refs: Vec<ObjectId> = {
+        let dict = inc
+            .get_prev_documents()
+            .get_object(acroform_id)
+            .and_then(Object::as_dict)?;
+        match dict.get(b"Fields") {
+            Ok(Object::Array(arr)) => arr.iter().filter_map(|o| o.as_reference().ok()).collect(),
+            _ => return Ok(()),
+        }
+    };
+
+    let mut stack: Vec<ObjectId> = field_refs;
+    let mut seen: HashSet<ObjectId> = HashSet::new();
+    while let Some(field_id) = stack.pop() {
+        if !seen.insert(field_id) {
+            continue;
+        }
+        inc.opt_clone_object_to_new_document(field_id)?;
+        let kids_refs: Vec<ObjectId> = inc
+            .get_prev_documents()
+            .get_object(field_id)
+            .and_then(Object::as_dict)
+            .ok()
+            .and_then(|d| d.get(b"Kids").ok())
+            .and_then(|o| match o {
+                Object::Array(arr) => Some(arr.iter().filter_map(|o| o.as_reference().ok()).collect()),
+                _ => None,
+            })
+            .unwrap_or_default();
+        for kid in kids_refs {
+            stack.push(kid);
+        }
+    }
     Ok(())
 }
 
@@ -124,14 +209,27 @@ pub fn strip_annotation_streams(
     input_path: String,
     output_path: String,
 ) -> Result<bool, String> {
-    let mut doc = Document::load(&input_path).map_err(|e| e.to_string())?;
-    let meta = writer::load_meta(&doc);
-    if meta.stream_ids.is_empty() {
-        doc.save(&output_path).map_err(|e| e.to_string())?;
+    let meta_empty = Document::load(&input_path)
+        .map(|d| writer::load_meta(&d).stream_ids.is_empty())
+        .unwrap_or(true);
+    if meta_empty {
+        // No burn streams to clear; just copy bytes verbatim and avoid lopdf's
+        // corruption-prone full rewrite.
+        std::fs::copy(&input_path, &output_path).map_err(|e| e.to_string())?;
         return Ok(false);
     }
-    writer::clear_annotation_streams(&mut doc, &meta)?;
-    doc.save(&output_path).map_err(|e| e.to_string())?;
+
+    let mut inc = IncrementalDocument::load(&input_path).map_err(|e| e.to_string())?;
+    let meta = writer::load_meta(inc.get_prev_documents());
+    for arr in meta.stream_ids.values() {
+        let sid = (arr[0], arr[1] as u16);
+        inc.opt_clone_object_to_new_document(sid)
+            .map_err(|e| e.to_string())?;
+        if let Ok(Object::Stream(s)) = inc.new_document.get_object_mut(sid) {
+            s.content = vec![];
+        }
+    }
+    inc.save(&output_path).map_err(|e| e.to_string())?;
     Ok(true)
 }
 

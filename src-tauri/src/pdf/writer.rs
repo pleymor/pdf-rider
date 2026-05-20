@@ -723,10 +723,12 @@ fn field_on_state_name(dict: &lopdf::Dictionary) -> Vec<u8> {
     b"Yes".to_vec()
 }
 
-/// Clear the content streams referenced by `meta.stream_ids`.
-/// Produces a "display" version of the PDF where annotation rendering
-/// is owned entirely by the overlay, avoiding stale pdf.js burns.
-pub fn clear_annotation_streams(doc: &mut Document, meta: &AnnotationMeta) -> Result<(), String> {
+/// Clear the content streams referenced by `meta.stream_ids` directly on a
+/// loaded `Document`. Production code uses `IncrementalDocument` paths (see
+/// `commands::pdf::strip_annotation_streams`) — this helper remains only as a
+/// building block for the round-trip tests below.
+#[cfg(test)]
+fn clear_annotation_streams(doc: &mut Document, meta: &AnnotationMeta) -> Result<(), String> {
     for arr in meta.stream_ids.values() {
         let sid = (arr[0], arr[1] as u16);
         if let Ok(obj) = doc.get_object_mut(sid) {
