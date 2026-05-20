@@ -102,6 +102,7 @@ pub fn save_annotated_pdf(
 
         inc.opt_clone_object_to_new_document(page_id)
             .map_err(|e| e.to_string())?;
+        inline_page_resources(&mut inc, page_id)?;
         if let Some(sid) = existing {
             inc.opt_clone_object_to_new_document(sid)
                 .map_err(|e| e.to_string())?;
@@ -147,6 +148,86 @@ pub fn save_annotated_pdf(
     }
 
     inc.save(&output_path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// `write_annotations_for_page`'s `add_font_to_page` / `add_xobject_to_page`
+/// helpers assume `/Resources` (and its `/Font`, `/XObject` sub-dicts) live
+/// inline on the page. Real-world PDFs frequently use indirect references
+/// instead (e.g. `/Resources 100 0 R`), causing them to bail with
+/// "Resources is not an inline dict".
+///
+/// We materialise the referenced dictionaries onto the page in `new_document`
+/// (page already cloned by the caller) by cloning their contents from
+/// `prev_documents`. The originals stay untouched, so any other page that
+/// shared them keeps working.
+fn inline_page_resources(
+    inc: &mut IncrementalDocument,
+    page_id: ObjectId,
+) -> Result<(), String> {
+    // Step 1: inline /Resources itself if it's a reference.
+    let resources_ref: Option<ObjectId> = {
+        let dict = inc
+            .new_document
+            .get_object(page_id)
+            .and_then(Object::as_dict)
+            .map_err(|e| e.to_string())?;
+        match dict.get(b"Resources") {
+            Ok(Object::Reference(id)) => Some(*id),
+            _ => None,
+        }
+    };
+    if let Some(res_id) = resources_ref {
+        let clone = inc
+            .get_prev_documents()
+            .get_object(res_id)
+            .map_err(|e| e.to_string())?
+            .clone();
+        let page = inc
+            .new_document
+            .get_object_mut(page_id)
+            .and_then(Object::as_dict_mut)
+            .map_err(|e| e.to_string())?;
+        page.set(b"Resources", clone);
+    }
+
+    // Step 2: inline /Resources/Font and /Resources/XObject if either is a reference.
+    let (font_ref, xobj_ref): (Option<ObjectId>, Option<ObjectId>) = {
+        let dict = inc
+            .new_document
+            .get_object(page_id)
+            .and_then(Object::as_dict)
+            .map_err(|e| e.to_string())?;
+        let res = match dict.get(b"Resources") {
+            Ok(Object::Dictionary(d)) => d,
+            _ => return Ok(()),
+        };
+        let f = match res.get(b"Font") {
+            Ok(Object::Reference(id)) => Some(*id),
+            _ => None,
+        };
+        let x = match res.get(b"XObject") {
+            Ok(Object::Reference(id)) => Some(*id),
+            _ => None,
+        };
+        (f, x)
+    };
+    for (key, maybe_ref) in [(&b"Font"[..], font_ref), (&b"XObject"[..], xobj_ref)] {
+        let Some(sub_id) = maybe_ref else { continue };
+        let clone = inc
+            .get_prev_documents()
+            .get_object(sub_id)
+            .map_err(|e| e.to_string())?
+            .clone();
+        let page = inc
+            .new_document
+            .get_object_mut(page_id)
+            .and_then(Object::as_dict_mut)
+            .map_err(|e| e.to_string())?;
+        if let Ok(Object::Dictionary(res)) = page.get_mut(b"Resources") {
+            res.set(key.to_vec(), clone);
+        }
+    }
     Ok(())
 }
 
