@@ -73,6 +73,8 @@ export interface Translations {
   pmDeletePage: string;
   pmRotatePage: string;
   pmRestorePage: string;
+  pmZoom?: string;
+  pmWillDelete?: string;
   // Print modal
   printTitle: string;
   printCancel: string;
@@ -183,6 +185,8 @@ const EN: Translations = {
   pmDeletePage:        "Delete page",
   pmRotatePage:        "Rotate page",
   pmRestorePage:       "Restore page",
+  pmZoom:              "Size",
+  pmWillDelete:        "Will delete: {n}",
   ctxCopy:             "Copy",
   settingsDefaultApp:  "Default App",
   settingsSetDefault:  "Set as default PDF viewer",
@@ -293,6 +297,8 @@ const FR: Translations = {
   pmDeletePage:        "Supprimer la page",
   pmRotatePage:        "Tourner la page",
   pmRestorePage:       "Restaurer la page",
+  pmZoom:              "Taille",
+  pmWillDelete:        "À supprimer : {n}",
   ctxCopy:             "Copier",
   settingsDefaultApp:  "Application par d\u00e9faut",
   settingsSetDefault:  "D\u00e9finir comme visionneuse PDF par d\u00e9faut",

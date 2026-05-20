@@ -649,6 +649,7 @@ input[type="color"].color-picker {
 /* ── Page Manager ───────────────────────────────────────────────────────── */
 
 .page-manager-container {
+  --pm-thumb-width: 220px;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -660,12 +661,35 @@ input[type="color"].color-picker {
 .page-manager-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 16px;
   font-weight: 600;
   font-size: 14px;
   padding-bottom: 12px;
   border-bottom: 1px solid #444;
   flex-shrink: 0;
+}
+
+.page-manager-title {
+  flex: 0 0 auto;
+}
+
+.page-manager-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.page-manager-zoom-label {
+  font-size: 12px;
+  color: #aaa;
+}
+
+.page-manager-zoom-slider {
+  width: 140px;
+  accent-color: #4a90e2;
+  cursor: pointer;
 }
 
 .page-manager-grid {
@@ -677,15 +701,32 @@ input[type="color"].color-picker {
   padding: 16px 0;
   align-content: flex-start;
   justify-content: center;
+  outline: none;
 }
 
 .page-manager-footer {
   display: flex;
+  align-items: center;
   gap: 8px;
-  justify-content: flex-end;
   padding-top: 12px;
   border-top: 1px solid #444;
   flex-shrink: 0;
+}
+
+.page-manager-deleted-counter {
+  font-size: 12px;
+  color: #ff8888;
+  flex: 1;
+}
+
+.page-manager-deleted-counter:empty {
+  display: none;
+}
+
+.page-manager-footer-buttons {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .page-thumbnail-card {
@@ -697,21 +738,36 @@ input[type="color"].color-picker {
   border: 1px solid #444;
   border-radius: 6px;
   background: #2d2d2d;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, border-color 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+  outline: none;
+}
+
+.page-thumbnail-card:focus-visible {
+  border-color: #4a90e2;
+}
+
+.page-thumbnail-card.selected {
+  border-color: #4a90e2;
+  box-shadow: 0 0 0 1px #4a90e2 inset;
+  background: #2a3a52;
 }
 
 .page-thumbnail-card.deleted {
-  opacity: 0.3;
+  opacity: 0.35;
 }
 
 .page-thumbnail-canvas-wrapper {
   position: relative;
   line-height: 0;
+  width: var(--pm-thumb-width);
   transition: transform 0.2s;
 }
 
 .page-thumbnail-canvas-wrapper canvas {
   display: block;
+  width: 100%;
+  height: auto;
   border: 1px solid #555;
 }
 
