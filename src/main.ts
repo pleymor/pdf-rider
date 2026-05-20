@@ -410,13 +410,19 @@ pageManagerModal.onConfirm(async (operations) => {
     const tmpPath = `${tmp}pdf-rider-pages-${base}`;
 
     const fv: FormFieldValue[] = [...formValues.entries()].map(([name, value]) => ({ name, value }));
-    await saveAnnotatedPdf(displayFilePath ?? filePath, tmpPath, store.getAll(), viewer.rotation, fv);
-    await modifyPages(tmpPath, tmpPath, operations);
+    // Skip the annotation-burn pass when there's nothing to burn. lopdf 0.39's
+    // full-rewrite save mangles content streams of PDFs that use object streams
+    // (iLovePDF / Acrobat output), so we feed modifyPages straight from the
+    // source file in that case. modifyPages uses incremental updates and is safe.
+    const hasMutations = store.getAll().length > 0 || viewer.rotation !== 0 || fv.length > 0;
+    if (hasMutations) {
+      await saveAnnotatedPdf(displayFilePath ?? filePath, tmpPath, store.getAll(), viewer.rotation, fv);
+      await modifyPages(tmpPath, tmpPath, operations);
+    } else {
+      await modifyPages(displayFilePath ?? filePath, tmpPath, operations);
+    }
     await loadPdf(tmpPath);
     filePath = originalPath;
-    // The page-modified content lives in tmpPath; route subsequent saves to read from it
-    // instead of the unmodified original. (loadPdf only sets displayFilePath when the
-    // file already contains stored annotations.)
     if (!displayFilePath) displayFilePath = tmpPath;
     setDirty(true);
     showToast("Pages updated.");

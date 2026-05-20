@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use lopdf::Document;
+use lopdf::{Document, IncrementalDocument, Object};
 use serde::{Deserialize, Serialize};
 
 use crate::pdf::{models::Annotation, writer, writer::FormFieldValue};
@@ -33,6 +33,23 @@ pub fn save_annotated_pdf(
     rotation_delta: i64,
     form_fields: Vec<FormFieldValue>,
 ) -> Result<(), String> {
+    // Fast-path: nothing to apply → byte-perfect copy. Avoids lopdf's
+    // full-rewrite save, which corrupts content streams on PDFs that use
+    // object streams (`/ObjStm`) + indirect /Length entries (iLovePDF /
+    // Acrobat output).
+    if annotations.is_empty() && rotation_delta == 0 && form_fields.is_empty() {
+        let prev_meta_empty = Document::load(&input_path)
+            .map(|d| {
+                let m = writer::load_meta(&d);
+                m.annotations.is_empty() && m.stream_ids.is_empty()
+            })
+            .unwrap_or(true);
+        if prev_meta_empty {
+            std::fs::copy(&input_path, &output_path).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    }
+
     let mut doc = Document::load(&input_path).map_err(|e| e.to_string())?;
 
     // Apply rotation to every page's Rotate entry before burning annotations.
@@ -127,13 +144,32 @@ pub fn read_annotations(file_path: String) -> Result<Vec<Annotation>, String> {
 }
 
 /// Applies per-page rotation and deletion to a PDF.
+///
+/// Implementation notes
+/// --------------------
+/// We **MUST NOT** round-trip the document through `Document::load` + `save`.
+/// lopdf 0.39's full-save path corrupts content streams on PDFs that use object
+/// streams (`/ObjStm`) or indirect-reference `/Length` entries (typical of
+/// iLovePDF/Acrobat output): some streams disappear, others lose their length
+/// reference, and the resulting file renders as garbage in Chrome, Edge, and
+/// pdf.js. Pure structural fixes (flattening the page tree, etc.) don't help —
+/// the corruption is at the save layer.
+///
+/// Instead, we use `IncrementalDocument` which preserves the input bytes
+/// verbatim and only appends an incremental update with the modified objects.
+/// Page deletion in this model means: clone the deleted page's parent
+/// `/Pages` dict into the new revision, drop the kid ref, decrement `/Count`,
+/// walk up the parent chain decrementing each ancestor's `/Count`. Rotations
+/// clone the leaf page dict and bump its `/Rotate`. The deleted page objects
+/// stay in the original bytes but become unreferenced, so PDF viewers ignore
+/// them.
 #[tauri::command]
 pub fn modify_pages(
     input_path: String,
     output_path: String,
     operations: Vec<PageOperation>,
 ) -> Result<(), String> {
-    let mut doc = Document::load(&input_path).map_err(|e| e.to_string())?;
+    let mut inc = IncrementalDocument::load(&input_path).map_err(|e| e.to_string())?;
 
     let rotation_map: HashMap<u32, i64> = operations
         .iter()
@@ -147,29 +183,84 @@ pub fn modify_pages(
         .map(|op| op.page)
         .collect();
 
-    let pages = doc.get_pages();
-    for (&page_num, &page_id) in &pages {
-        if let Some(&rot_delta) = rotation_map.get(&page_num) {
-            if let Ok(lopdf::Object::Dictionary(ref mut dict)) = doc.get_object_mut(page_id) {
-                let current = dict
-                    .get(b"Rotate")
-                    .ok()
-                    .and_then(|o| o.as_i64().ok())
-                    .unwrap_or(0);
-                let new_rotate = (current + rot_delta).rem_euclid(360);
-                dict.set(b"Rotate", lopdf::Object::Integer(new_rotate));
-            }
+    let pages = inc.get_prev_documents().get_pages();
+
+    // Rotations: clone the leaf, update /Rotate.
+    for (&page_num, &rot_delta) in &rotation_map {
+        let Some(&page_id) = pages.get(&page_num) else { continue };
+        inc.opt_clone_object_to_new_document(page_id)
+            .map_err(|e| e.to_string())?;
+        if let Ok(Object::Dictionary(dict)) = inc.new_document.get_object_mut(page_id) {
+            let current = dict
+                .get(b"Rotate")
+                .ok()
+                .and_then(|o| o.as_i64().ok())
+                .unwrap_or(0);
+            let new_rotate = (current + rot_delta).rem_euclid(360);
+            dict.set(b"Rotate", Object::Integer(new_rotate));
         }
     }
 
-    if !delete_set.is_empty() {
-        let mut to_delete: Vec<u32> = delete_set.iter().copied().collect();
-        to_delete.sort();
-        doc.delete_pages(&to_delete);
+    // Deletions: drop the page from its parent's /Kids, then decrement /Count
+    // up the chain. We do this per deleted page so multi-page deletes within
+    // the same intermediate node accumulate correctly.
+    for &page_num in &delete_set {
+        let Some(&page_id) = pages.get(&page_num) else { continue };
+
+        let direct_parent = inc
+            .get_prev_documents()
+            .get_object(page_id)
+            .and_then(Object::as_dict)
+            .and_then(|d| d.get(b"Parent"))
+            .and_then(Object::as_reference)
+            .map_err(|e| format!("page {page_num} has no /Parent: {e}"))?;
+
+        inc.opt_clone_object_to_new_document(direct_parent)
+            .map_err(|e| e.to_string())?;
+        if let Ok(Object::Dictionary(dict)) = inc.new_document.get_object_mut(direct_parent) {
+            if let Ok(Object::Array(kids)) = dict.get_mut(b"Kids") {
+                kids.retain(|k| k.as_reference().ok() != Some(page_id));
+            }
+            let count = dict
+                .get(b"Count")
+                .and_then(Object::as_i64)
+                .unwrap_or(0);
+            dict.set(b"Count", Object::Integer(count - 1));
+        }
+
+        // Walk the rest of the parent chain decrementing /Count.
+        let mut cursor = direct_parent;
+        let mut depth = 0;
+        loop {
+            depth += 1;
+            if depth > 64 {
+                break;
+            }
+            let next = inc
+                .get_prev_documents()
+                .get_object(cursor)
+                .and_then(Object::as_dict)
+                .and_then(|d| d.get(b"Parent"))
+                .and_then(Object::as_reference);
+            let Ok(next_id) = next else { break };
+            if next_id == cursor {
+                break;
+            }
+            inc.opt_clone_object_to_new_document(next_id)
+                .map_err(|e| e.to_string())?;
+            if let Ok(Object::Dictionary(dict)) = inc.new_document.get_object_mut(next_id) {
+                let count = dict
+                    .get(b"Count")
+                    .and_then(Object::as_i64)
+                    .unwrap_or(0);
+                dict.set(b"Count", Object::Integer(count - 1));
+            }
+            cursor = next_id;
+        }
     }
 
-    let mut meta = writer::load_meta(&doc);
-
+    // Update CCAnnot metadata so editable annotations follow the page renumber.
+    let mut meta = writer::load_meta(inc.get_prev_documents());
     if !delete_set.is_empty() {
         let sorted_deleted: Vec<u32> = {
             let mut v: Vec<u32> = delete_set.iter().copied().collect();
@@ -194,9 +285,178 @@ pub fn modify_pages(
         }
     }
 
-    writer::save_meta(&mut doc, &meta)?;
-    doc.save(&output_path).map_err(|e| e.to_string())?;
+    // save_meta needs the catalog in new_document so it can set /CCAnnot on it.
+    let cat_id = inc
+        .get_prev_documents()
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .map_err(|e| format!("No catalog: {e}"))?;
+    inc.opt_clone_object_to_new_document(cat_id)
+        .map_err(|e| e.to_string())?;
+    writer::save_meta(&mut inc.new_document, &meta)?;
+
+    inc.save(&output_path).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lopdf::{dictionary, ObjectId};
+
+    /// Build a PDF whose page tree mirrors iLovePDF/Acrobat output: a root
+    /// /Pages node with several intermediate /Pages nodes, each holding several
+    /// leaf /Page entries. This is the structure lopdf 0.39's delete_pages
+    /// corrupts.
+    fn build_nested_pdf(pages_per_group: usize, groups: usize) -> (Document, Vec<ObjectId>) {
+        let mut doc = Document::new();
+        doc.version = "1.7".to_string();
+
+        // Allocate the root /Pages first so leaves can reference its (eventual) id
+        // via /Parent. We'll fill in its /Kids after building intermediates.
+        let root_id = doc.add_object(dictionary! {
+            b"Type" => Object::Name(b"Pages".to_vec()),
+            b"Kids" => Object::Array(vec![]),
+            b"Count" => Object::Integer(0),
+        });
+
+        let mut intermediate_ids = Vec::new();
+        let mut leaf_ids = Vec::new();
+
+        for _ in 0..groups {
+            let mid_id = doc.add_object(dictionary! {
+                b"Type" => Object::Name(b"Pages".to_vec()),
+                b"Parent" => Object::Reference(root_id),
+                b"Kids" => Object::Array(vec![]),
+                b"Count" => Object::Integer(0),
+            });
+            let mut kids_for_mid = Vec::new();
+            for _ in 0..pages_per_group {
+                let leaf_id = doc.add_object(dictionary! {
+                    b"Type" => Object::Name(b"Page".to_vec()),
+                    b"Parent" => Object::Reference(mid_id),
+                    b"MediaBox" => Object::Array(vec![
+                        Object::Integer(0), Object::Integer(0),
+                        Object::Integer(612), Object::Integer(792),
+                    ]),
+                    b"Resources" => Object::Dictionary(lopdf::Dictionary::new()),
+                });
+                kids_for_mid.push(Object::Reference(leaf_id));
+                leaf_ids.push(leaf_id);
+            }
+            if let Ok(Object::Dictionary(d)) = doc.get_object_mut(mid_id) {
+                d.set(b"Kids".to_vec(), Object::Array(kids_for_mid));
+                d.set(b"Count".to_vec(), Object::Integer(pages_per_group as i64));
+            }
+            intermediate_ids.push(mid_id);
+        }
+
+        let root_kids: Vec<Object> = intermediate_ids
+            .iter()
+            .copied()
+            .map(Object::Reference)
+            .collect();
+        let total = (pages_per_group * groups) as i64;
+        if let Ok(Object::Dictionary(d)) = doc.get_object_mut(root_id) {
+            d.set(b"Kids".to_vec(), Object::Array(root_kids));
+            d.set(b"Count".to_vec(), Object::Integer(total));
+        }
+
+        let cat_id = doc.add_object(dictionary! {
+            b"Type" => Object::Name(b"Catalog".to_vec()),
+            b"Pages" => Object::Reference(root_id),
+        });
+        doc.trailer.set(b"Root", Object::Reference(cat_id));
+
+        (doc, leaf_ids)
+    }
+
+    /// Regression: deleting page 1 from a multi-level page tree (iLovePDF
+    /// layout: root → 4 intermediates of 20 pages) used to corrupt the tree
+    /// because lopdf's `delete_pages` doesn't scrub the deleted ref from every
+    /// intermediate /Kids. The saved file would end up with the deleted page
+    /// still referenced and other intermediates with empty Kids/Count=0.
+    #[test]
+    fn delete_first_page_of_multi_level_tree() {
+        let (mut doc, _leaves) = build_nested_pdf(20, 4);
+        assert_eq!(doc.get_pages().len(), 80);
+
+        let input = std::env::temp_dir().join("pdf-rider-test-multilevel-in.pdf");
+        let output = std::env::temp_dir().join("pdf-rider-test-multilevel-out.pdf");
+        doc.save(&input).unwrap();
+
+        modify_pages(
+            input.to_string_lossy().into_owned(),
+            output.to_string_lossy().into_owned(),
+            vec![PageOperation { page: 1, rotation: 0, delete: true }],
+        )
+        .unwrap();
+
+        let saved = Document::load(&output).unwrap();
+        assert_eq!(
+            saved.get_pages().len(),
+            79,
+            "saved file should have 79 pages after deleting page 1"
+        );
+
+        // No /Pages node should still reference 80 entries, and the catalog's
+        // root /Pages must report Count=79.
+        let cat_id = saved
+            .trailer
+            .get(b"Root")
+            .and_then(|o| o.as_reference())
+            .unwrap();
+        let root_pages_id = saved
+            .get_object(cat_id)
+            .and_then(Object::as_dict)
+            .and_then(|d| d.get(b"Pages"))
+            .and_then(Object::as_reference)
+            .unwrap();
+        let root = saved
+            .get_object(root_pages_id)
+            .and_then(Object::as_dict)
+            .unwrap();
+        let root_count = root.get(b"Count").and_then(Object::as_i64).unwrap();
+        assert_eq!(root_count, 79, "root /Pages Count must be 79");
+
+        let _ = std::fs::remove_file(&input);
+        let _ = std::fs::remove_file(&output);
+    }
+
+    /// Deleting a contiguous slice from the middle: 3 pages out of 20 across
+    /// two intermediates must shift annotation pages correctly and leave the
+    /// remaining 17 pages readable.
+    #[test]
+    fn delete_pages_across_intermediates() {
+        let (mut doc, _) = build_nested_pdf(5, 4);
+        assert_eq!(doc.get_pages().len(), 20);
+
+        let input = std::env::temp_dir().join("pdf-rider-test-cross-in.pdf");
+        let output = std::env::temp_dir().join("pdf-rider-test-cross-out.pdf");
+        doc.save(&input).unwrap();
+
+        let ops: Vec<PageOperation> = (1..=20)
+            .map(|p| PageOperation {
+                page: p,
+                rotation: 0,
+                delete: matches!(p, 5 | 6 | 7),
+            })
+            .collect();
+
+        modify_pages(
+            input.to_string_lossy().into_owned(),
+            output.to_string_lossy().into_owned(),
+            ops,
+        )
+        .unwrap();
+
+        let saved = Document::load(&output).unwrap();
+        assert_eq!(saved.get_pages().len(), 17);
+
+        let _ = std::fs::remove_file(&input);
+        let _ = std::fs::remove_file(&output);
+    }
 }
 
 /// Extracts selected pages from a PDF into a new file, preserving vector text.
