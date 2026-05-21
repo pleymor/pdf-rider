@@ -13,6 +13,96 @@
       <div id="context-toolbar"></div>
     </div>
     <div id="viewer-scroll"></div>
+    <div id="welcome-screen">
+      <div class="welcome-inner">
+        <div class="welcome-logo" aria-hidden="true">
+          <svg viewBox="0 0 1024 1024" width="96" height="96" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="welcomeBgGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#E53935"/>
+                <stop offset="100%" stop-color="#B71C1C"/>
+              </linearGradient>
+              <linearGradient id="welcomeFoldGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#C62828"/>
+                <stop offset="100%" stop-color="#8E1318"/>
+              </linearGradient>
+            </defs>
+            <path d="M192 80 L672 80 L832 240 L832 880 C832 916 803 944 768 944 L256 944 C220 944 192 916 192 880 Z" fill="url(#welcomeBgGrad)"/>
+            <path d="M672 80 L672 176 C672 212 700 240 736 240 L832 240 Z" fill="url(#welcomeFoldGrad)"/>
+            <rect x="296" y="360" width="432" height="24" rx="12" fill="rgba(255,255,255,0.35)"/>
+            <rect x="296" y="420" width="360" height="24" rx="12" fill="rgba(255,255,255,0.35)"/>
+            <rect x="296" y="480" width="400" height="24" rx="12" fill="rgba(255,255,255,0.35)"/>
+            <text x="512" y="740" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="260" fill="#FFFFFF" letter-spacing="12">PDF</text>
+          </svg>
+        </div>
+        <h1 class="welcome-title">PDF Rider</h1>
+        <p class="welcome-tagline" data-i18n="welcomeTagline">Read, annotate, sign and edit your PDFs.</p>
+        <button id="welcome-open-btn" class="welcome-cta">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M10.4287 1.08398C10.5111 1.02905 10.608 0.999824 10.707 1H14.7L15 1.3V5.293C15 5.39194 14.9706 5.48864 14.9156 5.57088C14.8606 5.65311 14.7824 5.71718 14.691 5.75498C14.5996 5.79277 14.499 5.80259 14.402 5.78319C14.3049 5.76379 14.2159 5.71605 14.146 5.646L12.973 4.473L12.692 4.192L9.067 7.817C8.94923 7.93347 8.79034 7.99888 8.6247 7.99907C8.45907 7.99925 8.30003 7.93421 8.182 7.818C8.06518 7.70036 7.99962 7.54129 7.99962 7.3755C7.99962 7.20971 8.06518 7.05065 8.182 6.933L11.807 3.308L10.353 1.854C10.2829 1.78407 10.2351 1.6949 10.2158 1.59779C10.1964 1.50068 10.2063 1.40001 10.2442 1.30854C10.2821 1.21707 10.3464 1.13891 10.4287 1.08398ZM7.81694 2.06694C7.69973 2.18415 7.54076 2.25 7.375 2.25H2.85L2.25 2.85V13.15L2.85 13.75H13.15L13.75 13.15V8.625C13.75 8.45924 13.8158 8.30027 13.9331 8.18306C14.0503 8.06585 14.2092 8 14.375 8C14.5408 8 14.6997 8.06585 14.8169 8.18306C14.9342 8.30027 15 8.45924 15 8.625V13C15 13.5304 14.7893 14.0391 14.4142 14.4142C14.0391 14.7893 13.5304 15 13 15H3C2.46957 15 1.96086 14.7893 1.58579 14.4142C1.21071 14.0391 1 13.5304 1 13V3C1 2.46957 1.21071 1.96086 1.58579 1.58579C1.96086 1.21071 2.46957 1 3 1H7.375C7.54076 1 7.69973 1.06585 7.81694 1.18306C7.93415 1.30027 8 1.45924 8 1.625C8 1.79076 7.93415 1.94973 7.81694 2.06694Z" fill="currentColor"/></svg>
+          <span data-i18n="welcomeOpen">Open a PDF</span>
+        </button>
+        <p class="welcome-hint">
+          <span data-i18n="welcomeDropHint">…or drop a PDF anywhere in this window</span>
+          <span class="welcome-shortcut"><kbd>Ctrl</kbd>+<kbd>O</kbd></span>
+        </p>
+        <div class="welcome-features">
+          <div class="welcome-feature">
+            <div class="welcome-feature-icon">
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M2.49913 12.6251C2.61913 12.6251 2.73913 12.6051 2.85713 12.5661L6.29013 11.4201L13.2891 4.4221C14.0191 3.6911 14.0191 2.5011 13.2891 1.7701L12.2291 0.710098C11.4971 -0.0199023 10.3091 -0.0199023 9.57713 0.710098L2.57813 7.7091L1.43313 11.1451C1.29813 11.5511 1.40213 11.9931 1.70513 12.2951C1.92113 12.5101 2.20613 12.6251 2.49913 12.6251ZM10.4611 1.5951C10.7031 1.3511 11.1021 1.3511 11.3441 1.5951L12.4051 2.6561C12.6491 2.8991 12.6491 3.2961 12.4051 3.5391L11.3401 4.6051L9.39513 2.6601L10.4611 1.5951ZM3.67013 8.3851L8.51013 3.5451L10.4541 5.4891L5.61413 10.3301L2.69713 11.3031L3.67013 8.3851Z" fill="currentColor"/></svg>
+            </div>
+            <div class="welcome-feature-text">
+              <span class="welcome-feature-title" data-i18n="welcomeFeatAnnotate">Annotate</span>
+              <span class="welcome-feature-desc" data-i18n="welcomeFeatAnnotateDesc">Text, shapes &amp; highlights</span>
+            </div>
+          </div>
+          <div class="welcome-feature">
+            <div class="welcome-feature-icon">
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M11.618 12.868L11.254 13.25H10.423C10.335 13.396 10.182 13.5 10 13.5H2C1.725 13.5 1.5 13.275 1.5 13V2C1.5 1.725 1.725 1.5 2 1.5H6.939L7 1.561V4.5C7 4.776 7.224 5 7.5 5H10.439L10.5 5.061V6.515L12 5.015V4.75C12 4.551 11.921 4.36 11.78 4.22L7.78 0.22C7.64 0.079 7.449 0 7.25 0H2C0.895 0 0 0.895 0 2V13C0 14.105 0.895 15 2 15H10C11.105 15 12 14.105 12 13V12.486L11.618 12.868Z" fill="currentColor"/><path d="M13.836 4.946C13.962 4.819 14.13 4.75 14.309 4.75C14.487 4.75 14.655 4.819 14.782 4.945L15.805 5.969C15.931 6.094 16 6.262 16 6.441C16 6.621 15.931 6.789 15.805 6.915L14.9397 7.78033L12.9707 5.81134L13.836 4.946Z" fill="currentColor"/><path d="M12.4403 6.34167L8.84 9.942C8.793 9.989 8.767 10.052 8.767 10.119V11.75C8.767 11.888 8.879 12 9.017 12H10.616L10.793 11.927L14.4093 8.31067L12.4403 6.34167Z" fill="currentColor"/></svg>
+            </div>
+            <div class="welcome-feature-text">
+              <span class="welcome-feature-title" data-i18n="welcomeFeatSign">Sign</span>
+              <span class="welcome-feature-desc" data-i18n="welcomeFeatSignDesc">Add your signature</span>
+            </div>
+          </div>
+          <div class="welcome-feature">
+            <div class="welcome-feature-icon">
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M1 1.5C1 1.22386 1.22386 1 1.5 1H6.5C6.77614 1 7 1.22386 7 1.5V6.5C7 6.77614 6.77614 7 6.5 7H1.5C1.22386 7 1 6.77614 1 6.5V1.5ZM2 2V6H6V2H2ZM9 1.5C9 1.22386 9.22386 1 9.5 1H14.5C14.7761 1 15 1.22386 15 1.5V6.5C15 6.77614 14.7761 7 14.5 7H9.5C9.22386 7 9 6.77614 9 6.5V1.5ZM10 2V6H14V2H10ZM1 9.5C1 9.22386 1.22386 9 1.5 9H6.5C6.77614 9 7 9.22386 7 9.5V14.5C7 14.7761 6.77614 15 6.5 15H1.5C1.22386 15 1 14.7761 1 14.5V9.5ZM2 10V14H6V10H2ZM9 9.5C9 9.22386 9.22386 9 9.5 9H14.5C14.7761 9 15 9.22386 15 9.5V14.5C15 14.7761 14.7761 15 14.5 15H9.5C9.22386 15 9 14.7761 9 14.5V9.5ZM10 10V14H14V10H10Z" fill="currentColor"/></svg>
+            </div>
+            <div class="welcome-feature-text">
+              <span class="welcome-feature-title" data-i18n="welcomeFeatPages">Manage pages</span>
+              <span class="welcome-feature-desc" data-i18n="welcomeFeatPagesDesc">Reorder, rotate, delete</span>
+            </div>
+          </div>
+          <div class="welcome-feature">
+            <div class="welcome-feature-icon">
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M3 1.5C2.72386 1.5 2.5 1.72386 2.5 2V14C2.5 14.2761 2.72386 14.5 3 14.5H7V1.5H3ZM8 1.5V14.5H13C13.2761 14.5 13.5 14.2761 13.5 14V2C13.5 1.72386 13.2761 1.5 13 1.5H8ZM1 2C1 0.895431 1.89543 0 3 0H13C14.1046 0 15 0.895431 15 2V14C15 15.1046 14.1046 16 13 16H3C1.89543 16 1 15.1046 1 14V2Z" fill="currentColor"/></svg>
+            </div>
+            <div class="welcome-feature-text">
+              <span class="welcome-feature-title" data-i18n="welcomeFeatSplit">Split</span>
+              <span class="welcome-feature-desc" data-i18n="welcomeFeatSplitDesc">Extract page ranges</span>
+            </div>
+          </div>
+          <div class="welcome-feature">
+            <div class="welcome-feature-icon">
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M2 7.25C1.58579 7.25 1.25 7.58579 1.25 8C1.25 8.41421 1.58579 8.75 2 8.75H14C14.4142 8.75 14.75 8.41421 14.75 8C14.75 7.58579 14.4142 7.25 14 7.25H2Z" fill="currentColor"/><path d="M3.75 4.25L8 0L12.25 4.25H9.5V6.25H6.5V4.25H3.75Z" fill="currentColor"/><path d="M12.25 11.75L8 16L3.75 11.75H6.5V9.75H9.5V11.75H12.25Z" fill="currentColor"/></svg>
+            </div>
+            <div class="welcome-feature-text">
+              <span class="welcome-feature-title" data-i18n="welcomeFeatCompress">Compress</span>
+              <span class="welcome-feature-desc" data-i18n="welcomeFeatCompressDesc">Shrink file size</span>
+            </div>
+          </div>
+          <div class="welcome-feature">
+            <div class="welcome-feature-icon">
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M13 4H12V2C12 1.46957 11.7893 0.960859 11.4142 0.585786C11.0391 0.210714 10.5304 0 10 0L6 0C5.46957 0 4.96086 0.210714 4.58579 0.585786C4.21071 0.960859 4 1.46957 4 2V4H3C2.46957 4 1.96086 4.21071 1.58579 4.58579C1.21071 4.96086 1 5.46957 1 6V11C1 11.5304 1.21071 12.0391 1.58579 12.4142C1.96086 12.7893 2.46957 13 3 13H4V14C4 14.5304 4.21071 15.0391 4.58579 15.4142C4.96086 15.7893 5.46957 16 6 16H10C10.5304 16 11.0391 15.7893 11.4142 15.4142C11.7893 15.0391 12 14.5304 12 14V13H13C13.5304 13 14.0391 12.7893 14.4142 12.4142C14.7893 12.0391 15 11.5304 15 11V6C15 5.46957 14.7893 4.96086 14.4142 4.58579C14.0391 4.21071 13.5304 4 13 4ZM10.75 14.15L10.15 14.75H5.85L5.25 14.15V10H10.75V14.15ZM10.75 4H5.25V1.85L5.85 1.25H10.15L10.75 1.85V4ZM13 7.6L12.6 8H11.4L11 7.6V6.4L11.4 6H12.6L13 6.4V7.6Z" fill="currentColor"/></svg>
+            </div>
+            <div class="welcome-feature-text">
+              <span class="welcome-feature-title" data-i18n="welcomeFeatPrint">Print</span>
+              <span class="welcome-feature-desc" data-i18n="welcomeFeatPrintDesc">Select pages &amp; printer</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
   <!-- Signature modal (hidden by default) -->
   <div id="signature-modal" class="modal-backdrop hidden">

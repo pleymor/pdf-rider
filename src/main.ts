@@ -205,6 +205,7 @@ settingsModal.onChange(s => {
     if (startup.filePath) {
       if (startup.shouldPrint) {
         document.getElementById("toolbar-container")!.style.display = "none";
+        document.getElementById("welcome-screen")!.classList.add("hidden");
         await loadPdf(startup.filePath);
         const pages = await viewer.renderAllPagesForPrint(200);
         await printPages(pages);
@@ -307,12 +308,18 @@ async function promptPassword(fp: string): Promise<void> {
     displayFilePath = null;
     history.clear();
     setDirty(false);
+    setWelcomeVisible(false);
     toolbar.setLoaded(true);
     toolbar.updatePageInfo(1, viewer.pageCount);
     toolbar.updateZoom(viewer.scale);
   } catch {
     showToast("Wrong password or could not open file.", true);
   }
+}
+
+function setWelcomeVisible(visible: boolean): void {
+  const el = document.getElementById("welcome-screen");
+  if (el) el.classList.toggle("hidden", !visible);
 }
 
 async function loadPdf(path: string): Promise<void> {
@@ -343,6 +350,7 @@ async function loadPdf(path: string): Promise<void> {
 
     history.clear();
     setDirty(false);
+    setWelcomeVisible(false);
     toolbar.setLoaded(true);
     toolbar.updatePageInfo(1, viewer.pageCount);
     toolbar.updateZoom(viewer.scale);
@@ -474,6 +482,12 @@ printModal.onConfirm(async (settings) => {
   } catch (err) {
     showToast(`Print failed: ${err}`, true);
   }
+});
+
+// ── Welcome screen ────────────────────────────────────────────────────────────
+
+document.getElementById("welcome-open-btn")?.addEventListener("click", async () => {
+  await openFile();
 });
 
 // ── Toolbar events ────────────────────────────────────────────────────────────

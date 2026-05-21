@@ -135,6 +135,22 @@ export interface Translations {
   menuSignature: string;
   menuPrint: string;
   menuSettings: string;
+  // Welcome screen (optional — HTML carries English fallback)
+  welcomeTagline?: string;
+  welcomeOpen?: string;
+  welcomeDropHint?: string;
+  welcomeFeatAnnotate?: string;
+  welcomeFeatAnnotateDesc?: string;
+  welcomeFeatSign?: string;
+  welcomeFeatSignDesc?: string;
+  welcomeFeatPages?: string;
+  welcomeFeatPagesDesc?: string;
+  welcomeFeatSplit?: string;
+  welcomeFeatSplitDesc?: string;
+  welcomeFeatCompress?: string;
+  welcomeFeatCompressDesc?: string;
+  welcomeFeatPrint?: string;
+  welcomeFeatPrintDesc?: string;
 }
 
 // ── English ───────────────────────────────────────────────────────────────────
@@ -264,6 +280,21 @@ const EN: Translations = {
   menuSignature:     "Signature",
   menuPrint:         "Print",
   menuSettings:      "Settings",
+  welcomeTagline:           "Read, annotate, sign and edit your PDFs.",
+  welcomeOpen:              "Open a PDF",
+  welcomeDropHint:          "…or drop a PDF anywhere in this window",
+  welcomeFeatAnnotate:      "Annotate",
+  welcomeFeatAnnotateDesc:  "Text, shapes & highlights",
+  welcomeFeatSign:          "Sign",
+  welcomeFeatSignDesc:      "Add your signature",
+  welcomeFeatPages:         "Manage pages",
+  welcomeFeatPagesDesc:     "Reorder, rotate, delete",
+  welcomeFeatSplit:         "Split",
+  welcomeFeatSplitDesc:     "Extract page ranges",
+  welcomeFeatCompress:      "Compress",
+  welcomeFeatCompressDesc:  "Shrink file size",
+  welcomeFeatPrint:         "Print",
+  welcomeFeatPrintDesc:     "Select pages & printer",
 };
 
 // ── French ────────────────────────────────────────────────────────────────────
@@ -393,6 +424,21 @@ const FR: Translations = {
   menuSignature:     "Signature",
   menuPrint:         "Imprimer",
   menuSettings:      "Param\u00e8tres",
+  welcomeTagline:           "Lisez, annotez, signez et modifiez vos PDF.",
+  welcomeOpen:              "Ouvrir un PDF",
+  welcomeDropHint:          "\u2026ou d\u00e9posez un PDF n\u2019importe o\u00f9 dans la fen\u00eatre",
+  welcomeFeatAnnotate:      "Annoter",
+  welcomeFeatAnnotateDesc:  "Texte, formes et surlignage",
+  welcomeFeatSign:          "Signer",
+  welcomeFeatSignDesc:      "Ajoutez votre signature",
+  welcomeFeatPages:         "G\u00e9rer les pages",
+  welcomeFeatPagesDesc:     "R\u00e9organiser, pivoter, supprimer",
+  welcomeFeatSplit:         "Diviser",
+  welcomeFeatSplitDesc:     "Extraire des pages",
+  welcomeFeatCompress:      "Compresser",
+  welcomeFeatCompressDesc:  "R\u00e9duire la taille du fichier",
+  welcomeFeatPrint:         "Imprimer",
+  welcomeFeatPrintDesc:     "Choisir pages et imprimante",
 };
 
 // ── Chinese (Mandarin) ────────────────────────────────────────────────────────
