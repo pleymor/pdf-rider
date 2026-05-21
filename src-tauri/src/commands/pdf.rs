@@ -603,6 +603,79 @@ mod tests {
         let _ = std::fs::remove_file(&output);
     }
 
+    /// split_pdf produces one PDF per range with the expected page count
+    /// and reuses existing filenames safely via `-2` suffixes.
+    #[test]
+    fn split_pdf_produces_one_file_per_range() {
+        let (mut doc, _) = build_nested_pdf(5, 2); // 10 pages
+        let dir = std::env::temp_dir().join(format!(
+            "pdf-rider-split-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("in.pdf");
+        doc.save(&input).unwrap();
+
+        let ranges = vec![
+            SplitRange { start: 1, end: 3 },
+            SplitRange { start: 4, end: 4 },
+            SplitRange { start: 5, end: 10 },
+        ];
+        let created = split_pdf(
+            input.to_string_lossy().into_owned(),
+            dir.to_string_lossy().into_owned(),
+            "doc".to_string(),
+            ranges,
+        )
+        .unwrap();
+
+        assert_eq!(created.len(), 3);
+        assert!(created[0].ends_with("doc-pages-1-3.pdf"));
+        assert!(created[1].ends_with("doc-page-4.pdf"));
+        assert!(created[2].ends_with("doc-pages-5-10.pdf"));
+
+        let counts: Vec<usize> = created
+            .iter()
+            .map(|p| Document::load(p).unwrap().get_pages().len())
+            .collect();
+        assert_eq!(counts, vec![3, 1, 6]);
+
+        // Re-running the same split should append `-2` suffixes to avoid collision.
+        let created2 = split_pdf(
+            input.to_string_lossy().into_owned(),
+            dir.to_string_lossy().into_owned(),
+            "doc".to_string(),
+            vec![SplitRange { start: 1, end: 3 }],
+        )
+        .unwrap();
+        assert!(created2[0].ends_with("doc-pages-1-3-2.pdf"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn split_pdf_rejects_out_of_range() {
+        let (mut doc, _) = build_nested_pdf(3, 1); // 3 pages
+        let dir = std::env::temp_dir().join(format!(
+            "pdf-rider-split-oob-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("in.pdf");
+        doc.save(&input).unwrap();
+
+        let err = split_pdf(
+            input.to_string_lossy().into_owned(),
+            dir.to_string_lossy().into_owned(),
+            "doc".to_string(),
+            vec![SplitRange { start: 1, end: 99 }],
+        )
+        .unwrap_err();
+        assert!(err.contains("Invalid range"), "got: {err}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Deleting a contiguous slice from the middle: 3 pages out of 20 across
     /// two intermediates must shift annotation pages correctly and leave the
     /// remaining 17 pages readable.
@@ -639,61 +712,251 @@ mod tests {
 }
 
 /// Extracts selected pages from a PDF into a new file, preserving vector text.
+///
+/// Implementation note: we MUST NOT round-trip through `Document::save`. lopdf
+/// 0.39's full-rewrite path corrupts content streams on PDFs that use object
+/// streams (`/ObjStm`) or indirect-reference `/Length` entries (typical of
+/// Acrobat / iLovePDF / Word output) — text comes out garbled. We use
+/// `IncrementalDocument` instead, which preserves the input bytes verbatim and
+/// drops unwanted pages by mutating only the page-tree metadata in an
+/// incremental update. The dropped page objects remain in the bytes but become
+/// unreferenced, so viewers ignore them.
 #[tauri::command]
 pub fn extract_pdf_pages(
     input_path: String,
     output_path: String,
     pages: Vec<u32>,
 ) -> Result<(), String> {
-    let mut doc = Document::load(&input_path).map_err(|e| e.to_string())?;
+    let keep: HashSet<u32> = pages.into_iter().collect();
+    extract_pages_via_incremental(&input_path, &output_path, &keep)
+}
 
-    let all_pages = doc.get_pages();
-    let total = all_pages.len() as u32;
+/// Keeps only the pages in `keep` (1-based). Uses `IncrementalDocument` so
+/// content streams stay byte-perfect. The file size is dominated by the
+/// original bytes — unreferenced page objects stay in the file as orphans.
+fn extract_pages_via_incremental(
+    input_path: &str,
+    output_path: &str,
+    keep: &HashSet<u32>,
+) -> Result<(), String> {
+    let mut inc = IncrementalDocument::load(input_path).map_err(|e| e.to_string())?;
+    let total = inc.get_prev_documents().get_pages().len() as u32;
 
-    if pages.len() as u32 >= total {
-        doc.save(&output_path).map_err(|e| e.to_string())?;
+    let keeping_all = total > 0
+        && keep.len() as u32 >= total
+        && (1..=total).all(|p| keep.contains(&p));
+    if keeping_all {
+        // Byte-perfect copy — no incremental update needed.
+        std::fs::copy(input_path, output_path).map_err(|e| e.to_string())?;
         return Ok(());
     }
 
-    let pages_to_keep: std::collections::HashSet<u32> = pages.into_iter().collect();
-
-    let mut pages_to_remove: Vec<(u32, u16)> = Vec::new();
-    for (&page_num, &page_id) in &all_pages {
-        if !pages_to_keep.contains(&page_num) {
-            pages_to_remove.push(page_id);
-        }
-    }
-
-    let catalog_id = doc.trailer.get(b"Root")
-        .and_then(|o| o.as_reference())
-        .map_err(|e| format!("No catalog: {e}"))?;
-    let pages_id = doc.get_object(catalog_id)
-        .and_then(|o| o.as_dict())
-        .and_then(|d| d.get(b"Pages"))
-        .and_then(|o| o.as_reference())
-        .map_err(|e| format!("No Pages: {e}"))?;
-
-    let remove_set: std::collections::HashSet<(u32, u16)> = pages_to_remove.iter().copied().collect();
-
-    if let Ok(lopdf::Object::Dictionary(ref mut pages_dict)) = doc.get_object_mut(pages_id) {
-        if let Ok(lopdf::Object::Array(ref kids)) = pages_dict.get(b"Kids") {
-            let new_kids: Vec<lopdf::Object> = kids.iter()
-                .filter(|kid| {
-                    if let Ok(id) = kid.as_reference() {
-                        !remove_set.contains(&id)
-                    } else {
-                        true
-                    }
-                })
-                .cloned()
-                .collect();
-            let count = new_kids.len() as i64;
-            pages_dict.set(b"Kids", lopdf::Object::Array(new_kids));
-            pages_dict.set(b"Count", lopdf::Object::Integer(count));
-        }
-    }
-
-    doc.prune_objects();
-    doc.save(&output_path).map_err(|e| e.to_string())?;
+    let delete_set: HashSet<u32> = (1..=total).filter(|p| !keep.contains(p)).collect();
+    apply_page_deletions(&mut inc, &delete_set)?;
+    inc.save(output_path).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Drops `delete_set` pages from `inc` by walking each page up to its parent,
+/// removing it from /Kids, and decrementing /Count along the chain. Also
+/// updates the `CCAnnot` catalog entry so editable annotations follow the page
+/// renumber.
+///
+/// This is the same algorithm `modify_pages` uses for deletions, factored out
+/// so split / extract can reuse it.
+fn apply_page_deletions(
+    inc: &mut IncrementalDocument,
+    delete_set: &HashSet<u32>,
+) -> Result<(), String> {
+    if delete_set.is_empty() {
+        return Ok(());
+    }
+
+    let pages = inc.get_prev_documents().get_pages();
+
+    for &page_num in delete_set {
+        let Some(&page_id) = pages.get(&page_num) else { continue };
+
+        let direct_parent = inc
+            .get_prev_documents()
+            .get_object(page_id)
+            .and_then(Object::as_dict)
+            .and_then(|d| d.get(b"Parent"))
+            .and_then(Object::as_reference)
+            .map_err(|e| format!("page {page_num} has no /Parent: {e}"))?;
+
+        inc.opt_clone_object_to_new_document(direct_parent)
+            .map_err(|e| e.to_string())?;
+        if let Ok(Object::Dictionary(dict)) = inc.new_document.get_object_mut(direct_parent) {
+            if let Ok(Object::Array(kids)) = dict.get_mut(b"Kids") {
+                kids.retain(|k| k.as_reference().ok() != Some(page_id));
+            }
+            let count = dict.get(b"Count").and_then(Object::as_i64).unwrap_or(0);
+            dict.set(b"Count", Object::Integer(count - 1));
+        }
+
+        // Walk up the parent chain decrementing /Count.
+        let mut cursor = direct_parent;
+        let mut depth = 0;
+        loop {
+            depth += 1;
+            if depth > 64 {
+                break;
+            }
+            let next = inc
+                .get_prev_documents()
+                .get_object(cursor)
+                .and_then(Object::as_dict)
+                .and_then(|d| d.get(b"Parent"))
+                .and_then(Object::as_reference);
+            let Ok(next_id) = next else { break };
+            if next_id == cursor {
+                break;
+            }
+            inc.opt_clone_object_to_new_document(next_id)
+                .map_err(|e| e.to_string())?;
+            if let Ok(Object::Dictionary(dict)) = inc.new_document.get_object_mut(next_id) {
+                let count = dict.get(b"Count").and_then(Object::as_i64).unwrap_or(0);
+                dict.set(b"Count", Object::Integer(count - 1));
+            }
+            cursor = next_id;
+        }
+    }
+
+    // Update CCAnnot metadata so editable annotations follow the page renumber.
+    let mut meta = writer::load_meta(inc.get_prev_documents());
+    let sorted_deleted: Vec<u32> = {
+        let mut v: Vec<u32> = delete_set.iter().copied().collect();
+        v.sort();
+        v
+    };
+
+    meta.annotations.retain(|ann| !delete_set.contains(&ann.page()));
+    for ann in &mut meta.annotations {
+        let old_page = ann.page();
+        let shift = sorted_deleted.iter().filter(|&&d| d < old_page).count() as u32;
+        ann.set_page(old_page - shift);
+    }
+
+    let old_ids = std::mem::take(&mut meta.stream_ids);
+    for (page_num, ids) in old_ids {
+        if delete_set.contains(&page_num) {
+            continue;
+        }
+        let shift = sorted_deleted.iter().filter(|&&d| d < page_num).count() as u32;
+        meta.stream_ids.insert(page_num - shift, ids);
+    }
+
+    let cat_id = inc
+        .get_prev_documents()
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .map_err(|e| format!("No catalog: {e}"))?;
+    inc.opt_clone_object_to_new_document(cat_id)
+        .map_err(|e| e.to_string())?;
+    writer::save_meta(&mut inc.new_document, &meta)?;
+
+    Ok(())
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct SplitRange {
+    /// 1-based inclusive
+    pub start: u32,
+    /// 1-based inclusive
+    pub end: u32,
+}
+
+/// Splits a PDF into multiple files, one per range. Each output file contains
+/// the pages [start, end] (inclusive, 1-based) from `input_path`.
+///
+/// Output filenames: `{base_name}-pages-{start}-{end}.pdf` (or
+/// `{base_name}-page-{n}.pdf` when start == end). If a file already exists,
+/// `-N` is appended before the extension. Returns the list of created paths.
+#[tauri::command]
+pub fn split_pdf(
+    input_path: String,
+    output_dir: String,
+    base_name: String,
+    ranges: Vec<SplitRange>,
+) -> Result<Vec<String>, String> {
+    if ranges.is_empty() {
+        return Err("No ranges to split".to_string());
+    }
+
+    let total = Document::load(&input_path)
+        .map_err(|e| e.to_string())?
+        .get_pages()
+        .len() as u32;
+
+    let out_dir = std::path::PathBuf::from(&output_dir);
+    if !out_dir.is_dir() {
+        return Err(format!("Output directory not found: {output_dir}"));
+    }
+
+    let safe_base = sanitize_filename(&base_name);
+    let mut created: Vec<String> = Vec::with_capacity(ranges.len());
+
+    for range in &ranges {
+        if range.start == 0 || range.end < range.start || range.end > total {
+            return Err(format!(
+                "Invalid range {}-{} (document has {total} page{})",
+                range.start,
+                range.end,
+                if total == 1 { "" } else { "s" },
+            ));
+        }
+
+        let stem = if range.start == range.end {
+            format!("{safe_base}-page-{}", range.start)
+        } else {
+            format!("{safe_base}-pages-{}-{}", range.start, range.end)
+        };
+        let target = unique_path(&out_dir, &stem, "pdf");
+
+        let keep: HashSet<u32> = (range.start..=range.end).collect();
+        extract_pages_via_incremental(
+            &input_path,
+            target.to_string_lossy().as_ref(),
+            &keep,
+        )?;
+        created.push(target.to_string_lossy().into_owned());
+    }
+
+    Ok(created)
+}
+
+/// Strips characters that are illegal in filenames on Windows/macOS/Linux.
+fn sanitize_filename(name: &str) -> String {
+    let trimmed = name.trim().trim_end_matches('.');
+    let cleaned: String = trimmed
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            c if (c as u32) < 0x20 => '_',
+            c => c,
+        })
+        .collect();
+    if cleaned.is_empty() {
+        "document".to_string()
+    } else {
+        cleaned
+    }
+}
+
+/// Returns `{dir}/{stem}.{ext}`, appending `-N` to the stem until a free path is found.
+fn unique_path(dir: &std::path::Path, stem: &str, ext: &str) -> std::path::PathBuf {
+    let candidate = dir.join(format!("{stem}.{ext}"));
+    if !candidate.exists() {
+        return candidate;
+    }
+    for n in 2u32..=9999 {
+        let p = dir.join(format!("{stem}-{n}.{ext}"));
+        if !p.exists() {
+            return p;
+        }
+    }
+    dir.join(format!("{stem}-conflict.{ext}"))
 }

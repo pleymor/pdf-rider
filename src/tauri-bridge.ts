@@ -99,6 +99,28 @@ export async function extractPdfPages(
   return invoke<void>("extract_pdf_pages", { inputPath, outputPath, pages });
 }
 
+export interface SplitRange {
+  /** 1-based inclusive */
+  start: number;
+  /** 1-based inclusive */
+  end: number;
+}
+
+/** Splits a PDF into one output file per range. Returns the list of created paths. */
+export async function splitPdf(
+  inputPath: string,
+  outputDir: string,
+  baseName: string,
+  ranges: SplitRange[],
+): Promise<string[]> {
+  return invoke<string[]>("split_pdf", { inputPath, outputDir, baseName, ranges });
+}
+
+/** Opens a folder-picker dialog. Returns the chosen path or null. */
+export async function pickDirectoryDialog(): Promise<string | null> {
+  return invoke<string | null>("pick_directory_dialog");
+}
+
 export interface PrinterList {
   printers: string[];
   defaultPrinter: string;

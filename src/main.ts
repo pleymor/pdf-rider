@@ -6,6 +6,7 @@ import { SignatureModal } from "./signature-modal";
 import { SignatureStore } from "./signature-store";
 import { SettingsModal } from "./settings";
 import { PageManagerModal } from "./page-manager";
+import { SplitModal } from "./split-modal";
 import { getTranslations, applyTranslationsToDOM } from "./i18n";
 import { AnnotationStore } from "./annotation-store";
 import { AnnotationHistory } from "./annotation-history";
@@ -30,6 +31,8 @@ import {
   extractPdfPages,
   printPdfFile,
   modifyPages,
+  splitPdf,
+  pickDirectoryDialog,
 } from "./tauri-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tempDir, basename } from "@tauri-apps/api/path";
@@ -79,6 +82,7 @@ const sigStore           = new SignatureStore();
 const sigModal           = new SignatureModal(sigStore);
 const settingsModal      = new SettingsModal();
 const pageManagerModal   = new PageManagerModal();
+const splitModal         = new SplitModal();
 
 async function applyFitMode(): Promise<void> {
   if (!viewer.isLoaded() || fitMode === "none") return;
@@ -180,6 +184,7 @@ document.getElementById("viewer-scroll")!.addEventListener("focused-page-changed
   compressModal.applyTranslations(t);
   pageManagerModal.applyTranslations(t);
   printModal.applyTranslations(t);
+  splitModal.applyTranslations(t);
   applyTranslationsToDOM(t);
 }
 settingsModal.onChange(s => {
@@ -188,6 +193,7 @@ settingsModal.onChange(s => {
   compressModal.applyTranslations(t);
   pageManagerModal.applyTranslations(t);
   printModal.applyTranslations(t);
+  splitModal.applyTranslations(t);
   applyTranslationsToDOM(t);
 });
 
@@ -431,6 +437,23 @@ pageManagerModal.onConfirm(async (operations) => {
   }
 });
 
+splitModal.onConfirm(async (req) => {
+  if (!filePath) return;
+  const t = getTranslations(settingsModal.getSettings().language);
+  try {
+    const dir = await pickDirectoryDialog();
+    if (!dir) return;
+    const fullName = await basename(filePath);
+    const stem = fullName.replace(/\.pdf$/i, "");
+    const created = await splitPdf(filePath, dir, stem, req.ranges);
+    const tmpl = t.splitDoneToast ?? "Split into {n} file(s) in {dir}";
+    showToast(tmpl.replace("{n}", String(created.length)).replace("{dir}", dir));
+  } catch (err) {
+    const tmpl = t.splitFailedToast ?? "Split failed: {err}";
+    showToast(tmpl.replace("{err}", String(err)), true);
+  }
+});
+
 printModal.onConfirm(async (settings) => {
   if (!viewer.isLoaded() || !filePath) return;
   const isPdfPrinter = /print to pdf|pdf/i.test(settings.printerName);
@@ -483,6 +506,12 @@ toolbar.on(async (e) => {
     case "pages":
       if (viewer.isLoaded() && viewer.document) {
         pageManagerModal.open(viewer.document, viewer.pageCount);
+      }
+      break;
+
+    case "split":
+      if (viewer.isLoaded() && filePath) {
+        splitModal.open(viewer.pageCount);
       }
       break;
 

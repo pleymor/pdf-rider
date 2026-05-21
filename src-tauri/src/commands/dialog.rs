@@ -45,3 +45,10 @@ pub fn save_pdf_dialog(
 
     Ok(result.map(filepath_to_string))
 }
+
+/// Opens a native folder-picker dialog. Returns the chosen path or null.
+#[tauri::command]
+pub fn pick_directory_dialog(app: AppHandle) -> Result<Option<String>, String> {
+    let result = app.dialog().file().blocking_pick_folder();
+    Ok(result.map(filepath_to_string))
+}

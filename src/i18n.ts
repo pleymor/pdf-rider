@@ -75,6 +75,24 @@ export interface Translations {
   pmRestorePage: string;
   pmZoom?: string;
   pmWillDelete?: string;
+  // Split modal
+  menuSplit?: string;
+  splitTitle?: string;
+  splitClose?: string;
+  splitEachPage?: string;
+  splitEveryNPrefix?: string;
+  splitEveryNSuffix?: string;
+  splitCustomRanges?: string;
+  splitCancelBtn?: string;
+  splitApplyBtn?: string;
+  splitSummary?: string;
+  splitInvalidN?: string;
+  splitInvalidCustom?: string;
+  splitEnterRanges?: string;
+  splitNoPages?: string;
+  splitChooseFolder?: string;
+  splitDoneToast?: string;
+  splitFailedToast?: string;
   // Print modal
   printTitle: string;
   printCancel: string;
@@ -187,6 +205,23 @@ const EN: Translations = {
   pmRestorePage:       "Restore page",
   pmZoom:              "Size",
   pmWillDelete:        "Will delete: {n}",
+  menuSplit:           "Split…",
+  splitTitle:          "Split PDF",
+  splitClose:          "Cancel",
+  splitEachPage:       "Every page into its own file",
+  splitEveryNPrefix:   "Every",
+  splitEveryNSuffix:   "page(s) per file",
+  splitCustomRanges:   "Custom ranges",
+  splitCancelBtn:      "Cancel",
+  splitApplyBtn:       "Choose Folder & Split…",
+  splitSummary:        "Will produce {n} file(s).",
+  splitInvalidN:       "Enter a positive number of pages.",
+  splitInvalidCustom:  "Invalid ranges. Use e.g. \"1-3, 5, 7-9\".",
+  splitEnterRanges:    "Enter at least one page range.",
+  splitNoPages:        "No pages to split.",
+  splitChooseFolder:   "Choose output folder",
+  splitDoneToast:      "Split into {n} file(s) in {dir}",
+  splitFailedToast:    "Split failed: {err}",
   ctxCopy:             "Copy",
   settingsDefaultApp:  "Default App",
   settingsSetDefault:  "Set as default PDF viewer",
@@ -299,6 +334,23 @@ const FR: Translations = {
   pmRestorePage:       "Restaurer la page",
   pmZoom:              "Taille",
   pmWillDelete:        "À supprimer : {n}",
+  menuSplit:           "Diviser…",
+  splitTitle:          "Diviser le PDF",
+  splitClose:          "Annuler",
+  splitEachPage:       "Une page par fichier",
+  splitEveryNPrefix:   "Toutes les",
+  splitEveryNSuffix:   "page(s) par fichier",
+  splitCustomRanges:   "Plages personnalisées",
+  splitCancelBtn:      "Annuler",
+  splitApplyBtn:       "Choisir le dossier et diviser…",
+  splitSummary:        "Produira {n} fichier(s).",
+  splitInvalidN:       "Entrez un nombre positif de pages.",
+  splitInvalidCustom:  "Plages invalides. Ex. : « 1-3, 5, 7-9 ».",
+  splitEnterRanges:    "Entrez au moins une plage.",
+  splitNoPages:        "Aucune page à diviser.",
+  splitChooseFolder:   "Choisir le dossier de sortie",
+  splitDoneToast:      "Divisé en {n} fichier(s) dans {dir}",
+  splitFailedToast:    "Échec de la division : {err}",
   ctxCopy:             "Copier",
   settingsDefaultApp:  "Application par d\u00e9faut",
   settingsSetDefault:  "D\u00e9finir comme visionneuse PDF par d\u00e9faut",
@@ -2279,7 +2331,11 @@ const TRANSLATIONS: Record<string, Translations> = {
 };
 
 export function getTranslations(lang: string): Translations {
-  return TRANSLATIONS[lang] ?? EN;
+  const t = TRANSLATIONS[lang];
+  if (!t || t === EN) return EN;
+  // Fill optional keys that the chosen language hasn't translated with the
+  // English originals so UI elements never come up blank.
+  return { ...EN, ...t };
 }
 
 // ── DOM walker ────────────────────────────────────────────────────────────────

@@ -646,6 +646,78 @@ input[type="color"].color-picker {
   color: #888;
 }
 
+/* ── Split modal ────────────────────────────────────────────────────────── */
+
+.split-box {
+  min-width: 320px;
+  max-width: 420px;
+  width: 100%;
+}
+
+.split-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 12px;
+}
+
+.split-mode-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.split-mode-option:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.split-mode-option input[type="radio"] {
+  accent-color: #4a90d9;
+  flex-shrink: 0;
+}
+
+.split-every-input {
+  width: 64px;
+  background: #1e1e1e;
+  color: #e8e8e8;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 3px 6px;
+}
+
+.split-custom-input {
+  flex: 1 1 160px;
+  min-width: 140px;
+  background: #1e1e1e;
+  color: #e8e8e8;
+  border: 1px solid #555;
+  border-radius: 3px;
+  padding: 3px 8px;
+}
+
+.split-custom-input:disabled,
+.split-every-input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.split-summary {
+  font-size: 12px;
+  color: #aaa;
+  padding: 2px 4px;
+  min-height: 16px;
+}
+
+.split-summary.error {
+  color: #e57373;
+}
+
 /* ── Page Manager ───────────────────────────────────────────────────────── */
 
 .page-manager-container {

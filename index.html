@@ -70,6 +70,37 @@
       </div>
     </div>
   </div>
+  <!-- Split modal -->
+  <div id="split-modal" class="modal-backdrop hidden">
+    <div class="modal-box split-box">
+      <div class="modal-header">
+        <span id="split-title-span" data-i18n="splitTitle">Split PDF</span>
+        <button id="split-close-btn" class="icon-btn" title="Cancel" data-i18n-title="splitClose">✕</button>
+      </div>
+      <div class="split-options">
+        <label class="split-mode-option">
+          <input type="radio" name="split-mode" value="each" />
+          <span data-i18n="splitEachPage">Every page into its own file</span>
+        </label>
+        <label class="split-mode-option">
+          <input type="radio" name="split-mode" value="every" checked />
+          <span data-i18n="splitEveryNPrefix">Every</span>
+          <input type="number" id="split-every-n" class="split-every-input" value="1" min="1" />
+          <span data-i18n="splitEveryNSuffix">page(s) per file</span>
+        </label>
+        <label class="split-mode-option">
+          <input type="radio" name="split-mode" value="custom" />
+          <span data-i18n="splitCustomRanges">Custom ranges</span>
+          <input type="text" id="split-custom-input" class="split-custom-input" placeholder="1-3, 5, 7-9" disabled />
+        </label>
+        <div id="split-summary" class="split-summary"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="split-cancel-btn" class="btn" data-i18n="splitCancelBtn">Cancel</button>
+        <button id="split-apply-btn" class="btn btn-primary" data-i18n="splitApplyBtn">Choose Folder &amp; Split…</button>
+      </div>
+    </div>
+  </div>
   <!-- Print modal -->
   <div id="print-modal" class="modal-backdrop hidden">
     <div class="modal-box print-box">

@@ -43,6 +43,7 @@ type ToolbarEvent =
   | { type: "layer-change"; dir: "front" | "back" }
   | { type: "signature" }
   | { type: "pages" }
+  | { type: "split" }
   | { type: "print" }
   | { type: "settings" }
   | { type: "undo" }
@@ -121,8 +122,8 @@ export class Toolbar {
   }
 
   applyTranslations(t: Translations): void {
-    this._i18nText.forEach((key, el)  => { el.textContent = t[key] ?? null; });
-    this._i18nTitle.forEach((key, el) => { el.title = t[key] ?? ""; });
+    this._i18nText.forEach((key, el)  => { const v = t[key]; if (v !== undefined) el.textContent = v; });
+    this._i18nTitle.forEach((key, el) => { const v = t[key]; if (v !== undefined) el.title = v; });
   }
 
   private reg(el: HTMLElement, text?: keyof Translations, title?: keyof Translations): void {
@@ -261,6 +262,7 @@ export class Toolbar {
         label: "menuPages",
         items: [
           { label: "menuManagePages", action: () => this.emit({ type: "pages" }), requiresDoc: true },
+          { label: "menuSplit", action: () => this.emit({ type: "split" }), requiresDoc: true },
         ],
       },
     ];
