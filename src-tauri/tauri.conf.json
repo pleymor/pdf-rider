@@ -32,12 +32,17 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": ["nsis", "deb", "rpm", "appimage"],
     "publisher": "Pleymor",
+    "category": "Office",
+    "shortDescription": "Lightweight PDF viewer, annotator and signer",
+    "longDescription": "PDF Rider is a simple, lightweight PDF viewer with annotation and signing capabilities.",
+    "homepage": "https://github.com/pleymor/pdf-rider",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
     ],
@@ -46,11 +51,23 @@
       "digestAlgorithm": "sha256",
       "timestampUrl": ""
     },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "cups-client", "xdg-utils"]
+      },
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "gtk3", "cups-client", "xdg-utils"]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    },
     "fileAssociations": [
       {
         "ext": ["pdf"],
         "name": "PDF Document",
         "description": "Portable Document Format",
+        "mimeType": "application/pdf",
         "role": "Editor"
       }
     ]

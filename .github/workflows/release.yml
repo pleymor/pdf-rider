@@ -12,8 +12,17 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build-and-release:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: ubuntu-22.04
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -35,6 +44,24 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libcups2-dev \
+            pkg-config \
+            build-essential \
+            curl \
+            wget \
+            file \
+            xdg-utils
+
       - name: Extract version from tag
         id: version
         shell: bash
@@ -44,12 +71,19 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
 
-      - name: Update version in tauri.conf.json
+      - name: Update version in tauri.conf.json (Windows)
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           (Get-Content src-tauri/tauri.conf.json) `
             -replace '"version": "[^"]*"', '"version": "${{ steps.version.outputs.version }}"' |
             Set-Content src-tauri/tauri.conf.json
+
+      - name: Update version in tauri.conf.json (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sed -i 's/"version": "[^"]*"/"version": "${{ steps.version.outputs.version }}"/' \
+            src-tauri/tauri.conf.json
 
       - name: Install frontend dependencies
         run: npm ci
@@ -58,11 +92,13 @@ jobs:
         run: npm run tauri build
 
       - name: Build MSIX package
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           .\build-msix.ps1 -SkipBuild -Version "${{ steps.version.outputs.version }}"
 
-      - name: Stage artifacts
+      - name: Stage Windows artifacts
+        if: matrix.platform == 'windows'
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -73,9 +109,52 @@ jobs:
           cp "msix-output/PDFRider_${VERSION}.0_x64.msix" \
              "pdf-rider-${VERSION}-win-x64.msix"
 
+      - name: Stage Linux artifacts
+        if: matrix.platform == 'linux'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DEB=$(ls src-tauri/target/release/bundle/deb/*.deb | head -n1)
+          APPIMAGE=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -n1)
+          RPM=$(ls src-tauri/target/release/bundle/rpm/*.rpm | head -n1 || true)
+          cp "$DEB" "pdf-rider-${VERSION}-linux-x86_64.deb"
+          cp "$APPIMAGE" "pdf-rider-${VERSION}-linux-x86_64.AppImage"
+          if [ -n "$RPM" ]; then
+            cp "$RPM" "pdf-rider-${VERSION}-linux-x86_64.rpm"
+          fi
+
+      - name: Upload Windows artifacts
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            pdf-rider-portable-${{ steps.version.outputs.version }}-win-x64.exe
+            pdf-rider-${{ steps.version.outputs.version }}-win-x64-setup.exe
+            pdf-rider-${{ steps.version.outputs.version }}-win-x64.msix
+
+      - name: Upload Linux artifacts
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            pdf-rider-${{ steps.version.outputs.version }}-linux-x86_64.deb
+            pdf-rider-${{ steps.version.outputs.version }}-linux-x86_64.AppImage
+            pdf-rider-${{ steps.version.outputs.version }}-linux-x86_64.rpm
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Check pre-release
         id: prerelease
-        shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           if [[ "$VERSION" == *"-alpha"* ]] || [[ "$VERSION" == *"-beta"* ]] || [[ "$VERSION" == *"-rc"* ]]; then
@@ -84,6 +163,12 @@ jobs:
             echo "is_prerelease=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -91,8 +176,6 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
           files: |
-            pdf-rider-portable-${{ steps.version.outputs.version }}-win-x64.exe
-            pdf-rider-${{ steps.version.outputs.version }}-win-x64-setup.exe
-            pdf-rider-${{ steps.version.outputs.version }}-win-x64.msix
+            artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

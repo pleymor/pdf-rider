@@ -18,7 +18,18 @@ pub fn check_pdf_association() -> bool {
         hkcu.open_subkey(r"Software\Classes\com.pdfrider.app\shell\open\command")
             .is_ok()
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        // Considered registered when our .desktop file exists in the user's
+        // application directory.
+        if let Some(home) = std::env::var_os("HOME") {
+            let desktop = std::path::PathBuf::from(home)
+                .join(".local/share/applications/pdf-rider.desktop");
+            return desktop.exists();
+        }
+        false
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         false
     }
@@ -108,10 +119,59 @@ pub fn register_pdf_handler() -> Result<(), String> {
 
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
-        Err("Registration is only supported on Windows".to_string())
+        register_pdf_handler_linux()
     }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Err("Registration is only supported on Windows and Linux".to_string())
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn register_pdf_handler_linux() -> Result<(), String> {
+    use std::fs;
+
+    let exe = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .to_string_lossy()
+        .to_string();
+
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let apps_dir = std::path::PathBuf::from(&home).join(".local/share/applications");
+    fs::create_dir_all(&apps_dir).map_err(|e| e.to_string())?;
+
+    let desktop_path = apps_dir.join("pdf-rider.desktop");
+    let desktop = format!(
+        "[Desktop Entry]\n\
+Type=Application\n\
+Name=PDF Rider\n\
+GenericName=PDF Reader\n\
+Comment=View, annotate and sign PDF documents\n\
+Exec={exe} %f\n\
+Icon=pdf-rider\n\
+Terminal=false\n\
+Categories=Office;Viewer;\n\
+MimeType=application/pdf;\n\
+StartupWMClass=PDF Rider\n\
+Actions=Print;\n\
+\n\
+[Desktop Action Print]\n\
+Name=Print\n\
+Exec={exe} --print %f\n",
+    );
+    fs::write(&desktop_path, desktop).map_err(|e| e.to_string())?;
+
+    // Best-effort: refresh the desktop database and set default handler.
+    let _ = std::process::Command::new("update-desktop-database")
+        .arg(&apps_dir)
+        .status();
+    let _ = std::process::Command::new("xdg-mime")
+        .args(["default", "pdf-rider.desktop", "application/pdf"])
+        .status();
+
+    Ok(())
 }
 
 // ── Printer helpers ──────────────────────────────────────────────────────────
@@ -129,10 +189,45 @@ pub fn list_printers() -> Result<PrinterList, String> {
     {
         list_printers_impl()
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        list_printers_linux()
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         Ok(PrinterList { printers: vec![], default_printer: String::new() })
     }
+}
+
+#[cfg(target_os = "linux")]
+fn list_printers_linux() -> Result<PrinterList, String> {
+    use std::process::Command;
+
+    // `lpstat -a` lists accepting destinations: "<name> accepting requests since ..."
+    let mut printers: Vec<String> = Vec::new();
+    if let Ok(out) = Command::new("lpstat").arg("-a").output() {
+        if out.status.success() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                if let Some(name) = line.split_whitespace().next() {
+                    printers.push(name.to_string());
+                }
+            }
+        }
+    }
+
+    // `lpstat -d` outputs either "system default destination: <name>" or
+    // "no system default destination".
+    let mut default_printer = String::new();
+    if let Ok(out) = Command::new("lpstat").arg("-d").output() {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout);
+            if let Some(idx) = s.find(':') {
+                default_printer = s[idx + 1..].trim().to_string();
+            }
+        }
+    }
+
+    Ok(PrinterList { printers, default_printer })
 }
 
 #[cfg(target_os = "windows")]
@@ -255,11 +350,76 @@ pub fn print_pages(
     {
         print_pages_impl(pages_b64, printer_name, copies, orientation, fit_mode)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        print_pages_linux(pages_b64, printer_name, copies, orientation, fit_mode)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = (pages_b64, printer_name, copies, orientation, fit_mode);
-        Err("Printing is only supported on Windows".to_string())
+        Err("Printing is only supported on Windows and Linux".to_string())
     }
+}
+
+#[cfg(target_os = "linux")]
+fn print_pages_linux(
+    pages_b64: Vec<String>,
+    printer_name: Option<String>,
+    copies: Option<u32>,
+    orientation: Option<String>,
+    fit_mode: Option<String>,
+) -> Result<(), String> {
+    use base64::Engine;
+    use std::io::Write;
+    use std::process::Command;
+
+    let num_copies = copies.unwrap_or(1).max(1);
+    let landscape = orientation.as_deref() == Some("landscape");
+    let fit_to_page = fit_mode.as_deref() != Some("actual");
+
+    // Write each JPEG page to a temp file, then submit via `lp`.
+    let tmpdir = std::env::temp_dir();
+    for (i, page_b64) in pages_b64.iter().enumerate() {
+        let jpeg_bytes = base64::engine::general_purpose::STANDARD
+            .decode(page_b64.trim())
+            .map_err(|e| format!("base64: {e}"))?;
+
+        let path = tmpdir.join(format!(
+            "pdf-rider-print-{}-{}.jpg",
+            std::process::id(),
+            i
+        ));
+        {
+            let mut f = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+            f.write_all(&jpeg_bytes).map_err(|e| e.to_string())?;
+        }
+
+        let mut cmd = Command::new("lp");
+        if let Some(p) = printer_name.as_deref() {
+            cmd.args(["-d", p]);
+        }
+        cmd.args(["-n", &num_copies.to_string()]);
+        if landscape {
+            cmd.args(["-o", "landscape"]);
+        }
+        if fit_to_page {
+            cmd.args(["-o", "fit-to-page"]);
+        }
+        cmd.arg(&path);
+
+        let out = cmd
+            .output()
+            .map_err(|e| format!("failed to invoke lp: {e}"))?;
+        // Remove the temp file regardless of outcome.
+        let _ = std::fs::remove_file(&path);
+        if !out.status.success() {
+            return Err(format!(
+                "lp failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]
@@ -467,9 +627,22 @@ pub fn unregister_pdf_handler() -> Result<(), String> {
 
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
-        Err("Only supported on Windows".to_string())
+        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+        let desktop = std::path::PathBuf::from(&home)
+            .join(".local/share/applications/pdf-rider.desktop");
+        if desktop.exists() {
+            std::fs::remove_file(&desktop).map_err(|e| e.to_string())?;
+        }
+        let _ = std::process::Command::new("update-desktop-database")
+            .arg(std::path::PathBuf::from(&home).join(".local/share/applications"))
+            .status();
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Err("Only supported on Windows and Linux".to_string())
     }
 }
 
@@ -522,6 +695,8 @@ pub fn register_print_verb() -> Result<(), String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
+        // On Linux the print action is part of the .desktop file written by
+        // register_pdf_handler, so there is nothing extra to do here.
         Ok(())
     }
 }
@@ -533,10 +708,26 @@ pub fn print_pdf_file(file_path: String, printer_name: String, copies: Option<u3
     {
         print_pdf_file_impl(file_path, printer_name, copies)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        let num_copies = copies.unwrap_or(1).max(1);
+        let out = std::process::Command::new("lp")
+            .args(["-d", &printer_name, "-n", &num_copies.to_string()])
+            .arg(&file_path)
+            .output()
+            .map_err(|e| format!("failed to invoke lp: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "lp failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = (file_path, printer_name, copies);
-        Err("Printing is only supported on Windows".to_string())
+        Err("Printing is only supported on Windows and Linux".to_string())
     }
 }
 
@@ -572,19 +763,52 @@ pub fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("Only http/https URLs are supported".into());
     }
-    // Use explorer.exe directly — avoids cmd.exe shell interpretation
-    Command::new("explorer.exe")
-        .arg(&url)
-        .spawn()
-        .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        // Use explorer.exe directly — avoids cmd.exe shell interpretation
+        Command::new("explorer.exe")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub fn open_default_apps_settings() -> Result<(), String> {
-    Command::new("cmd")
-        .args(["/C", "start", "", "ms-settings:defaultapps"])
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "", "ms-settings:defaultapps"])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Try to open the desktop's default-apps panel; fall back to running
+        // xdg-mime which at least surfaces the current PDF handler.
+        let candidates: &[&[&str]] = &[
+            &["gnome-control-center", "default-apps"],
+            &["systemsettings5", "kcm_componentchooser"],
+            &["systemsettings", "kcm_componentchooser"],
+        ];
+        for argv in candidates {
+            if Command::new(argv[0]).args(&argv[1..]).spawn().is_ok() {
+                return Ok(());
+            }
+        }
+        Err("Could not open default-apps settings panel".to_string())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Err("Not supported on this platform".to_string())
+    }
 }
