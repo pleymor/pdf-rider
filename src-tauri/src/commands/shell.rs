@@ -294,32 +294,24 @@ fn print_pages_impl(
         }
     };
 
-    // Build DEVMODEW if orientation is specified
-    let landscape = orientation.as_deref() == Some("landscape");
-    let devmode_ptr = if landscape {
-        use winapi::um::wingdi::DEVMODEW;
-        let mut dm: DEVMODEW = unsafe { std::mem::zeroed() };
-        dm.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
-        dm.dmFields = 0x1; // DM_ORIENTATION
-        unsafe { *dm.u1.s1_mut() }.dmOrientation = 2; // DMORIENT_LANDSCAPE
-        Box::into_raw(Box::new(dm))
-    } else {
-        ptr::null_mut()
-    };
+    // Ask the driver for its full DEVMODE (public part + driver-private data)
+    // and set the orientation on it. A hand-built, zeroed DEVMODE is rejected
+    // by some drivers, so fall back to the driver defaults if this fails.
+    let devmode_buf = orientation
+        .as_deref()
+        .and_then(|o| printer_devmode(&printer_wide, o == "landscape"));
+    let devmode_ptr = devmode_buf
+        .as_ref()
+        .map_or(ptr::null(), |b| b.as_ptr() as *const winapi::um::wingdi::DEVMODEW);
 
     let hdc: HDC = unsafe {
         CreateDCW(
             ptr::null(),
             printer_wide.as_ptr(),
             ptr::null(),
-            devmode_ptr as *const _,
+            devmode_ptr,
         )
     };
-
-    // Clean up devmode allocation
-    if !devmode_ptr.is_null() {
-        unsafe { drop(Box::from_raw(devmode_ptr)); }
-    }
 
     if hdc.is_null() {
         return Err("Failed to create printer DC".to_string());
@@ -403,7 +395,9 @@ fn print_pages_impl(
                 let y = (page_h - h) / 2;
                 (x.max(0), y.max(0), w.min(page_w), h.min(page_h))
             } else {
-                (0, 0, page_w, page_h)
+                // Scale to fit the printable area, keeping the aspect ratio
+                let (w, h) = fit_within(img_w, img_h, page_w, page_h);
+                ((page_w - w) / 2, (page_h - h) / 2, w, h)
             };
 
             unsafe { winapi::um::wingdi::StartPage(hdc) };
@@ -426,6 +420,93 @@ fn print_pages_impl(
     unsafe { DeleteDC(hdc) };
 
     Ok(())
+}
+
+/// Largest `(w, h)` with the image's aspect ratio that fits in `max_w × max_h`.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn fit_within(img_w: u32, img_h: u32, max_w: i32, max_h: i32) -> (i32, i32) {
+    if img_w == 0 || img_h == 0 || max_w <= 0 || max_h <= 0 {
+        return (max_w.max(0), max_h.max(0));
+    }
+    // Compare max_w / img_w against max_h / img_h without floating point
+    if max_w as i64 * img_h as i64 <= max_h as i64 * img_w as i64 {
+        (max_w, (img_h as i64 * max_w as i64 / img_w as i64) as i32)
+    } else {
+        ((img_w as i64 * max_h as i64 / img_h as i64) as i32, max_h)
+    }
+}
+
+/// Returns the printer driver's DEVMODE with the requested orientation set,
+/// as a raw buffer sized by the driver. `None` if the driver can't supply one.
+#[cfg(target_os = "windows")]
+fn printer_devmode(printer_wide: &[u16], landscape: bool) -> Option<Vec<u8>> {
+    use std::ptr;
+    use winapi::um::wingdi::{DEVMODEW, DMORIENT_LANDSCAPE, DMORIENT_PORTRAIT, DM_ORIENTATION};
+    use winapi::um::winspool::{ClosePrinter, DocumentPropertiesW, OpenPrinterW};
+
+    const DM_OUT_BUFFER: u32 = 2;
+    const DM_IN_BUFFER: u32 = 8;
+
+    let mut name = printer_wide.to_vec();
+    let mut handle = ptr::null_mut();
+    if unsafe { OpenPrinterW(name.as_mut_ptr(), &mut handle, ptr::null_mut()) } == 0 {
+        return None;
+    }
+
+    let result = (|| {
+        let size = unsafe {
+            DocumentPropertiesW(ptr::null_mut(), handle, name.as_mut_ptr(), ptr::null_mut(), ptr::null_mut(), 0)
+        };
+        if size < std::mem::size_of::<DEVMODEW>() as i32 {
+            return None;
+        }
+        let mut buf = vec![0u8; size as usize];
+        let dm = buf.as_mut_ptr() as *mut DEVMODEW;
+        let ok = unsafe {
+            DocumentPropertiesW(ptr::null_mut(), handle, name.as_mut_ptr(), dm, ptr::null_mut(), DM_OUT_BUFFER)
+        };
+        if ok < 0 {
+            return None;
+        }
+        unsafe {
+            let dm = &mut *dm;
+            dm.dmFields |= DM_ORIENTATION;
+            dm.u1.s1_mut().dmOrientation =
+                if landscape { DMORIENT_LANDSCAPE } else { DMORIENT_PORTRAIT } as i16;
+        }
+        // Let the driver validate and merge the change
+        let ok = unsafe {
+            DocumentPropertiesW(ptr::null_mut(), handle, name.as_mut_ptr(), dm, dm, DM_IN_BUFFER | DM_OUT_BUFFER)
+        };
+        if ok < 0 {
+            return None;
+        }
+        Some(buf)
+    })();
+
+    unsafe { ClosePrinter(handle) };
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fit_within;
+
+    #[test]
+    fn fit_within_keeps_aspect_ratio() {
+        // Portrait A4-ish image on a portrait page: height-bound
+        assert_eq!(fit_within(1000, 1414, 4800, 6600), (4667, 6600));
+        // Landscape image on a portrait page: width-bound, letterboxed
+        assert_eq!(fit_within(1414, 1000, 4800, 6600), (4800, 3394));
+        // Exact match
+        assert_eq!(fit_within(100, 200, 50, 100), (50, 100));
+    }
+
+    #[test]
+    fn fit_within_degenerate_inputs() {
+        assert_eq!(fit_within(0, 100, 50, 100), (50, 100));
+        assert_eq!(fit_within(100, 100, 0, 100), (0, 100));
+    }
 }
 
 /// Removes all registry entries created by register_pdf_handler.
@@ -524,47 +605,6 @@ pub fn register_print_verb() -> Result<(), String> {
     {
         Ok(())
     }
-}
-
-/// Prints a PDF file to a named printer using the system's native PDF handler.
-#[tauri::command]
-pub fn print_pdf_file(file_path: String, printer_name: String, copies: Option<u32>) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        print_pdf_file_impl(file_path, printer_name, copies)
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (file_path, printer_name, copies);
-        Err("Printing is only supported on Windows".to_string())
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn print_pdf_file_impl(file_path: String, printer_name: String, copies: Option<u32>) -> Result<(), String> {
-    use std::ptr;
-
-    let verb: Vec<u16> = "printto\0".encode_utf16().collect();
-    let file: Vec<u16> = format!("{file_path}\0").encode_utf16().collect();
-    let printer: Vec<u16> = format!("{printer_name}\0").encode_utf16().collect();
-
-    let num_copies = copies.unwrap_or(1).max(1);
-    for _ in 0..num_copies {
-        let result = unsafe {
-            winapi::um::shellapi::ShellExecuteW(
-                ptr::null_mut(),
-                verb.as_ptr(),
-                file.as_ptr(),
-                printer.as_ptr(),
-                ptr::null(),
-                0, // SW_HIDE
-            )
-        };
-        if (result as usize) <= 32 {
-            return Err(format!("ShellExecuteW failed with code {}", result as usize));
-        }
-    }
-    Ok(())
 }
 
 #[tauri::command]
