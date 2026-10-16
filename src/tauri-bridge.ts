@@ -131,19 +131,6 @@ export async function listPrinters(): Promise<PrinterList> {
   return invoke<PrinterList>("list_printers");
 }
 
-/** Prints a PDF file natively to a named printer via the system handler. */
-export async function printPdfFile(
-  filePath: string,
-  printerName: string,
-  copies?: number,
-): Promise<void> {
-  return invoke<void>("print_pdf_file", {
-    filePath,
-    printerName,
-    copies: copies ?? null,
-  });
-}
-
 /** Sends pre-rendered page images (base64 JPEG) to a printer. */
 export async function printPages(
   pagesB64: string[],
