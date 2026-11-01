@@ -49,7 +49,6 @@ pub fn run() {
             commands::pdf::split_pdf,
             commands::shell::list_printers,
             commands::shell::print_pages,
-            commands::shell::print_pdf_file,
             commands::shell::get_startup_args,
             commands::shell::check_pdf_association,
             commands::shell::register_pdf_handler,

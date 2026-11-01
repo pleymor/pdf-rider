@@ -29,7 +29,6 @@ import {
   getStartupArgs,
   printPages,
   extractPdfPages,
-  printPdfFile,
   modifyPages,
   splitPdf,
   pickDirectoryDialog,
@@ -472,11 +471,11 @@ printModal.onConfirm(async (settings) => {
       await extractPdfPages(filePath, out, settings.pageRange);
       showToast("PDF saved.");
     } else {
-      const tmp = await tempDir();
-      const name = await basename(filePath);
-      const tmpPdf = `${tmp}pdfrider-print-${name}`;
-      await extractPdfPages(filePath, tmpPdf, settings.pageRange);
-      await printPdfFile(tmpPdf, settings.printerName, settings.copies);
+      // Rasterise and print in-process: handing the file to the shell's
+      // "printto" verb fails when the default PDF app (e.g. Edge, the
+      // Windows 10 default) registers no print verbs.
+      const pages = await viewer.renderPagesForPrint(settings.pageRange, 200);
+      await printPages(pages, settings.printerName, settings.copies, settings.orientation, settings.fitMode);
       showToast("Sent to printer.");
     }
   } catch (err) {
