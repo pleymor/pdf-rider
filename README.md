@@ -66,6 +66,8 @@ Most PDF tools are either bloated desktop applications that take minutes to inst
 - Bookmarks, form fields (a duplicate field name gets a `_2` suffix so values stay separate), links and PDF Rider's editable annotations are kept; document info comes from the first file
 - Encrypted or damaged files are named in the list with the reason, before merging
 
+![Merge dialog: four PDFs in order, one rejected as encrypted](docs/screenshots/merge.png)
+
 ### Internationalized
 - **20 languages** — switch instantly in Settings, no restart required
 - UI fully translated: English, Français, 中文, हिन्दी, Español, العربية, বাংলা, Русский, Português, اردو, Bahasa Indonesia, Deutsch, 日本語, Kiswahili, मराठी, తెలుగు, Türkçe, தமிழ், Tiếng Việt, 한국어
