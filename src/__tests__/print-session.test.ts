@@ -81,6 +81,34 @@ describe("runPrintSession", () => {
     );
   });
 
+  it("keeps the queue open while failures are reported, so a Print started meanwhile joins", async () => {
+    // The failure dialog can stay open for minutes; a closed queue would make
+    // every later Explorer launch bounce between processes until it is dismissed.
+    const q = fakeQueue(["bad.pdf"]);
+    const printed: string[] = [];
+    const reports: string[][] = [];
+    const failures = await runPrintSession({
+      ...deps(q, async p => { if (p === "bad.pdf") throw new Error("broken"); printed.push(p); }),
+      report: async f => {
+        expect(q.closed).toBe(false);
+        reports.push(f.map(x => x.path));
+        if (reports.length === 1) q.handOver(["during-dialog.pdf"]);
+      },
+    });
+    expect(printed).toEqual(["during-dialog.pdf"]);
+    expect(reports).toEqual([["bad.pdf"]]); // each failure reported once
+    expect(failures.map(f => f.path)).toEqual(["bad.pdf"]);
+    expect(q.closed).toBe(true);
+  });
+
+  it("does not report a cancelled print as a failure", async () => {
+    const q = fakeQueue(["a.pdf"]);
+    const failures = await runPrintSession(deps(q, async () => {
+      throw { kind: "cancelled", message: "Printing was cancelled." };
+    }));
+    expect(failures).toEqual([]);
+  });
+
   it("reports a broken queue instead of silently printing nothing", async () => {
     const failures = await runPrintSession({
       takeJobs: async () => { throw "command take_print_jobs not found"; },

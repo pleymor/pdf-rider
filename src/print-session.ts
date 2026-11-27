@@ -6,7 +6,7 @@
  * single hidden window. Kept free of DOM/Tauri imports so it can be unit-tested.
  */
 
-import { errorText } from "./print-errors";
+import { errorText, isPrintCancelled } from "./print-errors";
 
 export interface PrintFailure {
   path: string;
@@ -23,6 +23,12 @@ export interface PrintSessionDeps {
   finish(): Promise<string[]>;
   /** Prints one file to the default printer; throws with a readable message. */
   printFile(path: string): Promise<void>;
+  /**
+   * Shows failures not reported yet. Called while the queue is still open, so
+   * files handed over meanwhile (the dialog may stay up for minutes) are
+   * printed by this session instead of bouncing between processes.
+   */
+  report?(failures: PrintFailure[]): Promise<void>;
   /** Called before each file. `total` grows as files are handed over. */
   onProgress?(done: number, total: number, path: string): void;
   /** Waits before closing the queue, so that late Explorer launches join this session. */
@@ -30,7 +36,11 @@ export interface PrintSessionDeps {
   graceMs?: number;
 }
 
-/** Prints every queued file and returns the ones that failed. Never throws. */
+/**
+ * Prints every queued file and returns the ones that failed; a cancelled job
+ * (e.g. the file prompt of a virtual printer) is not a failure. Never throws
+ * unless `report` does.
+ */
 export async function runPrintSession(deps: PrintSessionDeps): Promise<PrintFailure[]> {
   const failures: PrintFailure[] = [];
   const wait = deps.wait ?? ((ms: number) => new Promise<void>(r => setTimeout(r, ms)));
@@ -45,7 +55,7 @@ export async function runPrintSession(deps: PrintSessionDeps): Promise<PrintFail
       try {
         await deps.printFile(path);
       } catch (err) {
-        failures.push({ path, error: errorText(err) });
+        if (!isPrintCancelled(err)) failures.push({ path, error: errorText(err) });
       }
       done++;
       // Pick up files handed over while this one was printing.
@@ -54,10 +64,17 @@ export async function runPrintSession(deps: PrintSessionDeps): Promise<PrintFail
     }
   };
 
+  let reported = 0;
   await printAll(await safe(deps.takeJobs, failures));
   for (;;) {
     await wait(graceMs);
     await printAll(await safe(deps.takeJobs, failures));
+    if (deps.report && failures.length > reported) {
+      const fresh = failures.slice(reported);
+      reported = failures.length;
+      await deps.report(fresh);
+      continue; // print what arrived during the report before closing
+    }
     const late = await safe(deps.finish, failures);
     if (late.length === 0) break;
     await printAll(late);

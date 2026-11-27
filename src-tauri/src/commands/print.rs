@@ -51,6 +51,7 @@ impl PrintError {
 /// Step of the print job that failed, used to word the message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stage {
+    ListPrinters,
     FindDefaultPrinter,
     OpenPrinter,
     StartJob,
@@ -61,6 +62,7 @@ pub enum Stage {
 impl Stage {
     fn describe(self) -> String {
         match self {
+            Stage::ListPrinters => "listing the printers".into(),
             Stage::FindDefaultPrinter => "looking up the default printer".into(),
             Stage::OpenPrinter => "opening the printer".into(),
             Stage::StartJob => "starting the print job".into(),
@@ -148,6 +150,13 @@ pub fn describe_failure(stage: Stage, code: u32, printer: &str, system_text: &st
              disk space, close other programs or print fewer pages at a time."
                 .to_string(),
         ),
+        _ if printer.is_empty() => (
+            Failed,
+            format!(
+                "Printing failed while {}. Check the printers in {PRINTERS_SETTINGS}, then try again.",
+                stage.describe()
+            ),
+        ),
         _ => (
             Failed,
             format!(
@@ -196,7 +205,7 @@ pub fn fit_within(img_w: u32, img_h: u32, max_w: i32, max_h: i32) -> (i32, i32) 
     }
 }
 
-/// Decodes one base64 JPEG page into a bottom-up-free, 4-byte aligned BGR DIB.
+/// Decodes one base64 page image into top-down BGR rows padded to 4 bytes (a GDI DIB).
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 fn decode_page(page_b64: &str, page_no: usize) -> Result<(u32, u32, Vec<u8>), PrintError> {
     use base64::Engine;
@@ -365,18 +374,24 @@ pub mod win {
         let mut needed = 0u32;
         let mut returned = 0u32;
         let mut buf: Vec<u8> = Vec::new();
+        let mut listed = false;
         for _ in 0..3 {
             let ok = unsafe {
                 EnumPrintersW(flags, ptr::null_mut(), 4, buf.as_mut_ptr(), buf.len() as u32, &mut needed, &mut returned)
             };
             if ok != 0 {
+                listed = true;
                 break;
             }
             let (code, text) = last_error();
             if code != 122 || needed as usize <= buf.len() {
-                return Err(describe_failure(Stage::OpenPrinter, code, "", &text));
+                return Err(describe_failure(Stage::ListPrinters, code, "", &text));
             }
             buf = vec![0u8; needed as usize];
+        }
+        if !listed {
+            // The list kept growing between calls: printers being installed
+            return Err(describe_failure(Stage::ListPrinters, 122, "", &system_message(122)));
         }
         let infos = buf.as_ptr() as *const PRINTER_INFO_4W;
         let printers = (0..returned as usize)
@@ -626,6 +641,9 @@ mod tests {
         );
         let err = describe_failure(Stage::StartJob, 0, "HP", "");
         assert!(err.message.ends_with("(Windows reported no error code.)"), "{err}");
+        // Failures not tied to one printer do not name an empty one
+        let err = describe_failure(Stage::ListPrinters, 1784, "", "x");
+        assert!(err.message.starts_with("Printing failed while listing the printers."), "{err}");
     }
 
     #[test]

@@ -227,33 +227,43 @@ async function runPrintMode(): Promise<void> {
   document.body.appendChild(status);
 
   let printed = 0;
-  const failures = await runPrintSession({
-    takeJobs: takePrintJobs,
-    finish: finishPrintSession,
-    onProgress: (done, total, path) => {
-      status.textContent = `Printing ${done + 1} of ${total}: ${fileName(path)}`;
-    },
-    printFile: async (path) => {
-      // Load the file itself (not the annotation-stripped display copy used
-      // for editing) so annotations are printed, and let errors propagate
-      // instead of ending up in a toast nobody sees.
-      try {
-        await viewer.load(path);
-      } catch (err) {
-        throw new Error(describeLoadError(err));
-      }
-      const pages = await viewer.renderAllPagesForPrint(200);
-      if (pages.length === 0) throw new Error("The PDF has no pages to print.");
-      await printPages(pages);
-      printed++;
-    },
-  });
-
-  if (failures.length > 0) {
-    status.textContent = "";
-    await message(failureReport(failures, printed), { title: "PDF Rider — printing failed", kind: "error" });
+  try {
+    await runPrintSession({
+      takeJobs: takePrintJobs,
+      finish: finishPrintSession,
+      onProgress: (done, total, path) => {
+        status.textContent = `Printing ${done + 1} of ${total}: ${fileName(path)}`;
+      },
+      printFile: async (path) => {
+        // Load the file itself (not the annotation-stripped display copy used
+        // for editing) so annotations are printed, and let errors propagate
+        // instead of ending up in a toast nobody sees.
+        try {
+          await viewer.load(path);
+        } catch (err) {
+          throw new Error(describeLoadError(err));
+        }
+        const pages = await viewer.renderAllPagesForPrint(200);
+        if (pages.length === 0) throw new Error("The PDF has no pages to print.");
+        await printPages(pages);
+        printed++;
+      },
+      // Shown while the queue is still open: files handed over meanwhile are
+      // printed by this session once the dialog is dismissed.
+      report: async (failures) => {
+        const text = failureReport(failures, printed);
+        status.textContent = "";
+        try {
+          await message(text, { title: "PDF Rider — printing failed", kind: "error" });
+        } catch {
+          status.textContent = text; // the dialog could not open: keep the report visible
+          await new Promise(r => setTimeout(r, 15000));
+        }
+      },
+    });
+  } finally {
+    await appWindow.close();
   }
-  await appWindow.close();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
