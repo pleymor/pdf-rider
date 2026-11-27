@@ -10,6 +10,11 @@ import { errorText } from "./print-errors";
  */
 type ConfirmHandler = (paths: string[]) => Promise<boolean>;
 
+// Arrow characters fall back to a colour emoji font on Windows: draw them.
+const ICON_UP = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_DOWN = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3.5 8.5L8 13l4.5-4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_REMOVE = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+
 /** File › Merge PDFs…: the list of files to combine, in order. */
 export class MergeModal {
   private backdrop: HTMLElement;
@@ -199,15 +204,15 @@ export class MergeModal {
     }
     file.append(name, meta);
 
-    const up = this.rowButton("↑", this.tr("mergeMoveUp", "Move up"), "up", index === 0, () => {
+    const up = this.rowButton(ICON_UP, this.tr("mergeMoveUp", "Move up"), "up", index === 0, () => {
       this.list.move(item.id, -1);
       this.renderKeepingFocus(item.id, "up");
     });
-    const down = this.rowButton("↓", this.tr("mergeMoveDown", "Move down"), "down", index === count - 1, () => {
+    const down = this.rowButton(ICON_DOWN, this.tr("mergeMoveDown", "Move down"), "down", index === count - 1, () => {
       this.list.move(item.id, 1);
       this.renderKeepingFocus(item.id, "down");
     });
-    const remove = this.rowButton("✕", this.tr("mergeRemove", "Remove from the list"), "remove", false, () => {
+    const remove = this.rowButton(ICON_REMOVE, this.tr("mergeRemove", "Remove from the list"), "remove", false, () => {
       this.list.remove(item.id);
       this.render();
       this.addBtn.focus();
@@ -218,10 +223,10 @@ export class MergeModal {
     return li;
   }
 
-  private rowButton(label: string, title: string, role: string, disabled: boolean, action: () => void): HTMLButtonElement {
+  private rowButton(icon: string, title: string, role: string, disabled: boolean, action: () => void): HTMLButtonElement {
     const b = document.createElement("button");
     b.className = "icon-btn merge-row-btn";
-    b.textContent = label;
+    b.innerHTML = icon; // constant SVG markup
     b.title = title;
     b.setAttribute("aria-label", title);
     b.dataset["role"] = role;
