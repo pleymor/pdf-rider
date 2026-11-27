@@ -70,6 +70,19 @@ export async function getStartupArgs(): Promise<StartupArgs> {
   return invoke<StartupArgs>("get_startup_args");
 }
 
+/** `--print` mode: removes and returns the files waiting to be printed. */
+export async function takePrintJobs(): Promise<string[]> {
+  return invoke<string[]>("take_print_jobs");
+}
+
+/**
+ * `--print` mode: returns files handed over meanwhile, or closes the queue
+ * (later files are then printed by a new process) when there are none.
+ */
+export async function finishPrintSession(): Promise<string[]> {
+  return invoke<string[]>("finish_print_session");
+}
+
 /** Returns true if our ProgID is already registered in HKCU. */
 export async function checkPdfAssociation(): Promise<boolean> {
   return invoke<boolean>("check_pdf_association");

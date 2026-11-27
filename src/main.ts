@@ -7,7 +7,8 @@ import { SignatureStore } from "./signature-store";
 import { SettingsModal } from "./settings";
 import { PageManagerModal } from "./page-manager";
 import { SplitModal } from "./split-modal";
-import { errorText, isPrintCancelled } from "./print-errors";
+import { errorText, isPrintCancelled, describeLoadError } from "./print-errors";
+import { runPrintSession, failureReport, fileName } from "./print-session";
 import { getTranslations, applyTranslationsToDOM } from "./i18n";
 import { AnnotationStore } from "./annotation-store";
 import { AnnotationHistory } from "./annotation-history";
@@ -29,6 +30,8 @@ import {
   readAnnotations,
   getStartupArgs,
   printPages,
+  takePrintJobs,
+  finishPrintSession,
   extractPdfPages,
   modifyPages,
   splitPdf,
@@ -36,7 +39,7 @@ import {
 } from "./tauri-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tempDir, basename } from "@tauri-apps/api/path";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { ask, message } from "@tauri-apps/plugin-dialog";
 
 // ── Zoom levels ───────────────────────────────────────────────────────────────
 
@@ -202,22 +205,56 @@ settingsModal.onChange(s => {
 (async () => {
   try {
     const startup = await getStartupArgs();
-    if (startup.filePath) {
-      if (startup.shouldPrint) {
-        document.getElementById("toolbar-container")!.style.display = "none";
-        document.getElementById("welcome-screen")!.classList.add("hidden");
-        await loadPdf(startup.filePath);
-        const pages = await viewer.renderAllPagesForPrint(200);
-        await printPages(pages);
-        await appWindow.close();
-      } else {
-        await loadPdf(startup.filePath);
-      }
+    if (startup.shouldPrint) {
+      await runPrintMode();
+    } else if (startup.filePath) {
+      await loadPdf(startup.filePath);
     }
   } catch {
     // Not running in Tauri (browser preview) — skip
   }
 })();
+
+/**
+ * `--print` mode (Explorer's Print verb, one or several files): print every
+ * queued file to the default printer, report failures in one dialog, close.
+ */
+async function runPrintMode(): Promise<void> {
+  document.getElementById("toolbar-container")!.style.display = "none";
+  setWelcomeVisible(false);
+  const status = document.createElement("div");
+  status.className = "print-mode-status";
+  document.body.appendChild(status);
+
+  let printed = 0;
+  const failures = await runPrintSession({
+    takeJobs: takePrintJobs,
+    finish: finishPrintSession,
+    onProgress: (done, total, path) => {
+      status.textContent = `Printing ${done + 1} of ${total}: ${fileName(path)}`;
+    },
+    printFile: async (path) => {
+      // Load the file itself (not the annotation-stripped display copy used
+      // for editing) so annotations are printed, and let errors propagate
+      // instead of ending up in a toast nobody sees.
+      try {
+        await viewer.load(path);
+      } catch (err) {
+        throw new Error(describeLoadError(err));
+      }
+      const pages = await viewer.renderAllPagesForPrint(200);
+      if (pages.length === 0) throw new Error("The PDF has no pages to print.");
+      await printPages(pages);
+      printed++;
+    },
+  });
+
+  if (failures.length > 0) {
+    status.textContent = "";
+    await message(failureReport(failures, printed), { title: "PDF Rider — printing failed", kind: "error" });
+  }
+  await appWindow.close();
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
