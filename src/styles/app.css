@@ -1060,7 +1060,16 @@ input[type="color"].color-picker {
 }
 
 .toast.hidden { display: none; }
-.toast.error { border-color: #c0392b; color: #e74c3c; }
+.toast.error {
+  border-color: #c0392b;
+  color: #e74c3c;
+  /* Error messages carry a cause and a remedy: let users read, select and copy them */
+  max-width: min(640px, calc(100vw - 32px));
+  white-space: pre-line;
+  pointer-events: auto;
+  user-select: text;
+  cursor: pointer;
+}
 
 /* ── Context menu ────────────────────────────────────────────────────────── */
 
@@ -1221,4 +1230,17 @@ input[type="color"].color-picker {
     box-shadow: none;
     background: #fff;
   }
+}
+
+/* ── Print mode (Explorer "Print") ───────────────────────────────────────── */
+
+.print-mode-status {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  font-size: 14px;
+  text-align: center;
 }

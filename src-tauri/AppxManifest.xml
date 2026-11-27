@@ -2,9 +2,10 @@
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap2="http://schemas.microsoft.com/appx/manifest/uap/windows10/2"
   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap3 rescap">
+  IgnorableNamespaces="uap uap2 uap3 rescap">
 
   <Identity
     Name="Pleymor.pdf-rider"
@@ -46,6 +47,11 @@
               <uap:FileType>.pdf</uap:FileType>
             </uap:SupportedFileTypes>
             <uap:DisplayName>PDF Document</uap:DisplayName>
+            <!-- Explorer "Print", also on a multiple selection (Player: no 15-file
+                 limit, one launch per file, merged into one print session). -->
+            <uap2:SupportedVerbs>
+              <uap3:Verb Id="print" Parameters="--print &quot;%1&quot;" MultiSelectModel="Player">Print</uap3:Verb>
+            </uap2:SupportedVerbs>
           </uap:FileTypeAssociation>
         </uap:Extension>
       </Extensions>

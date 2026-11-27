@@ -68,8 +68,10 @@ Most PDF tools are either bloated desktop applications that take minutes to inst
 
 ### Windows integration
 - **Set as default PDF handler** directly from the app — no admin rights required
-- **Print** silently from the command line (`pdf-rider-portable.exe --print file.pdf`)
-- Registers both open and print verbs in HKCU
+- **Print** silently from the command line (`pdf-rider-portable.exe --print file.pdf [more.pdf …]`) to the default printer
+- **Print several PDFs from File Explorer**: select them, right-click › *Print* (when PDF Rider is the default PDF app). Explorer starts one process per file; they hand their file to the first one, which prints them one after another and reports any failure in a single dialog
+- Registers both open and print verbs: in HKCU for the portable exe (Settings › *Set as default*), by the installer for the setup version, and in the package manifest for the Microsoft Store (MSIX) version
+- Printing is done in-process (GDI), so it does not depend on the default PDF app or any other installed tool; print errors name the cause and what to do (printer not installed, no default printer, spooler stopped, …) with the Windows error code
 
 ---
 

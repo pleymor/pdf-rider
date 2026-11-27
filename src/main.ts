@@ -7,6 +7,8 @@ import { SignatureStore } from "./signature-store";
 import { SettingsModal } from "./settings";
 import { PageManagerModal } from "./page-manager";
 import { SplitModal } from "./split-modal";
+import { errorText, isPrintCancelled, describeLoadError } from "./print-errors";
+import { runPrintSession, failureReport, fileName } from "./print-session";
 import { getTranslations, applyTranslationsToDOM } from "./i18n";
 import { AnnotationStore } from "./annotation-store";
 import { AnnotationHistory } from "./annotation-history";
@@ -28,6 +30,8 @@ import {
   readAnnotations,
   getStartupArgs,
   printPages,
+  takePrintJobs,
+  finishPrintSession,
   extractPdfPages,
   modifyPages,
   splitPdf,
@@ -35,7 +39,7 @@ import {
 } from "./tauri-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { tempDir, basename } from "@tauri-apps/api/path";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { ask, message } from "@tauri-apps/plugin-dialog";
 
 // ── Zoom levels ───────────────────────────────────────────────────────────────
 
@@ -201,30 +205,80 @@ settingsModal.onChange(s => {
 (async () => {
   try {
     const startup = await getStartupArgs();
-    if (startup.filePath) {
-      if (startup.shouldPrint) {
-        document.getElementById("toolbar-container")!.style.display = "none";
-        document.getElementById("welcome-screen")!.classList.add("hidden");
-        await loadPdf(startup.filePath);
-        const pages = await viewer.renderAllPagesForPrint(200);
-        await printPages(pages);
-        await appWindow.close();
-      } else {
-        await loadPdf(startup.filePath);
-      }
+    if (startup.shouldPrint) {
+      await runPrintMode();
+    } else if (startup.filePath) {
+      await loadPdf(startup.filePath);
     }
   } catch {
     // Not running in Tauri (browser preview) — skip
   }
 })();
 
+/**
+ * `--print` mode (Explorer's Print verb, one or several files): print every
+ * queued file to the default printer, report failures in one dialog, close.
+ */
+async function runPrintMode(): Promise<void> {
+  document.getElementById("toolbar-container")!.style.display = "none";
+  setWelcomeVisible(false);
+  const status = document.createElement("div");
+  status.className = "print-mode-status";
+  document.body.appendChild(status);
+
+  let printed = 0;
+  try {
+    await runPrintSession({
+      takeJobs: takePrintJobs,
+      finish: finishPrintSession,
+      onProgress: (done, total, path) => {
+        status.textContent = `Printing ${done + 1} of ${total}: ${fileName(path)}`;
+      },
+      printFile: async (path) => {
+        // Load the file itself (not the annotation-stripped display copy used
+        // for editing) so annotations are printed, and let errors propagate
+        // instead of ending up in a toast nobody sees.
+        try {
+          await viewer.load(path);
+        } catch (err) {
+          throw new Error(describeLoadError(err));
+        }
+        const pages = await viewer.renderAllPagesForPrint(200);
+        if (pages.length === 0) throw new Error("The PDF has no pages to print.");
+        await printPages(pages);
+        printed++;
+      },
+      // Shown while the queue is still open: files handed over meanwhile are
+      // printed by this session once the dialog is dismissed.
+      report: async (failures) => {
+        const text = failureReport(failures, printed);
+        status.textContent = "";
+        try {
+          await message(text, { title: "PDF Rider — printing failed", kind: "error" });
+        } catch {
+          status.textContent = text; // the dialog could not open: keep the report visible
+          await new Promise(r => setTimeout(r, 15000));
+        }
+      },
+    });
+  } finally {
+    await appWindow.close();
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 function showToast(msg: string, isError = false): void {
   const toast = document.getElementById("toast")!;
   toast.textContent = msg;
   toast.className = `toast${isError ? " error" : ""}`;
-  setTimeout(() => toast.classList.add("hidden"), 3000);
+  // Errors stay long enough to be read (and can be dismissed with a click);
+  // a new toast restarts the timer instead of being hidden by an older one.
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.add("hidden"), isError ? 15000 : 3000);
+  toast.onclick = isError ? () => toast.classList.add("hidden") : null;
 }
 
 function setDirty(val: boolean): void {
@@ -468,18 +522,30 @@ printModal.onConfirm(async (settings) => {
     if (isPdfPrinter) {
       const out = await savePdfDialog(filePath);
       if (!out) return;
-      await extractPdfPages(filePath, out, settings.pageRange);
+      try {
+        await extractPdfPages(filePath, out, settings.pageRange);
+      } catch (err) {
+        showToast(`Could not save the PDF to ${out}: ${errorText(err)}. Check that the folder exists and is writable, and that the file is not open in another program.`, true);
+        return;
+      }
       showToast("PDF saved.");
     } else {
       // Rasterise and print in-process: handing the file to the shell's
       // "printto" verb fails when the default PDF app (e.g. Edge, the
       // Windows 10 default) registers no print verbs.
-      const pages = await viewer.renderPagesForPrint(settings.pageRange, 200);
+      let pages: string[];
+      try {
+        pages = await viewer.renderPagesForPrint(settings.pageRange, 200);
+      } catch (err) {
+        showToast(`Print failed: the pages could not be rendered (${errorText(err)}). Try printing fewer pages at a time.`, true);
+        return;
+      }
       await printPages(pages, settings.printerName, settings.copies, settings.orientation, settings.fitMode);
       showToast("Sent to printer.");
     }
   } catch (err) {
-    showToast(`Print failed: ${err}`, true);
+    if (isPrintCancelled(err)) showToast("Printing cancelled.");
+    else showToast(`Print failed: ${errorText(err)}`, true);
   }
 });
 

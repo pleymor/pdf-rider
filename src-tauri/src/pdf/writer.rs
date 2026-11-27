@@ -28,9 +28,12 @@ pub struct AnnotationMeta {
 fn pdf_text_to_string(bytes: &[u8]) -> Option<String> {
     if bytes.starts_with(&[0xFE, 0xFF]) {
         // UTF-16BE with BOM
-        let u16s: Vec<u16> = bytes[2..]
-            .chunks_exact(2)
-            .map(|c| u16::from_be_bytes([c[0], c[1]]))
+        // Pairs of bytes after the BOM; a trailing odd byte is ignored.
+        // (Indexing rather than chunks_exact/as_chunks: clippy ≥ 1.99 flags the
+        // former and the latter needs Rust 1.88, above the 1.77 minimum.)
+        let u16s: Vec<u16> = (2..bytes.len().saturating_sub(1))
+            .step_by(2)
+            .map(|i| u16::from_be_bytes([bytes[i], bytes[i + 1]]))
             .collect();
         String::from_utf16(&u16s).ok()
     } else {
@@ -745,6 +748,14 @@ fn clear_annotation_streams(doc: &mut Document, meta: &AnnotationMeta) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pdf_text_utf16be_pairs_and_odd_tail() {
+        assert_eq!(pdf_text_to_string(&[0xFE, 0xFF]).as_deref(), Some(""));
+        assert_eq!(pdf_text_to_string(&[0xFE, 0xFF, 0x00, 0x41, 0x00, 0xE9]).as_deref(), Some("Aé"));
+        // A trailing odd byte is ignored, as chunks_exact did
+        assert_eq!(pdf_text_to_string(&[0xFE, 0xFF, 0x00, 0x41, 0x42]).as_deref(), Some("A"));
+    }
     use crate::pdf::models::{RgbColor, TextAlignment};
 
     fn red() -> RgbColor { RgbColor { r: 255, g: 0, b: 0 } }
