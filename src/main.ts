@@ -7,6 +7,7 @@ import { SignatureStore } from "./signature-store";
 import { SettingsModal } from "./settings";
 import { PageManagerModal } from "./page-manager";
 import { SplitModal } from "./split-modal";
+import { errorText, isPrintCancelled } from "./print-errors";
 import { getTranslations, applyTranslationsToDOM } from "./i18n";
 import { AnnotationStore } from "./annotation-store";
 import { AnnotationHistory } from "./annotation-history";
@@ -220,11 +221,17 @@ settingsModal.onChange(s => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
 function showToast(msg: string, isError = false): void {
   const toast = document.getElementById("toast")!;
   toast.textContent = msg;
   toast.className = `toast${isError ? " error" : ""}`;
-  setTimeout(() => toast.classList.add("hidden"), 3000);
+  // Errors stay long enough to be read (and can be dismissed with a click);
+  // a new toast restarts the timer instead of being hidden by an older one.
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.add("hidden"), isError ? 15000 : 3000);
+  toast.onclick = isError ? () => toast.classList.add("hidden") : null;
 }
 
 function setDirty(val: boolean): void {
@@ -468,18 +475,30 @@ printModal.onConfirm(async (settings) => {
     if (isPdfPrinter) {
       const out = await savePdfDialog(filePath);
       if (!out) return;
-      await extractPdfPages(filePath, out, settings.pageRange);
+      try {
+        await extractPdfPages(filePath, out, settings.pageRange);
+      } catch (err) {
+        showToast(`Could not save the PDF to ${out}: ${errorText(err)}. Check that the folder exists and is writable, and that the file is not open in another program.`, true);
+        return;
+      }
       showToast("PDF saved.");
     } else {
       // Rasterise and print in-process: handing the file to the shell's
       // "printto" verb fails when the default PDF app (e.g. Edge, the
       // Windows 10 default) registers no print verbs.
-      const pages = await viewer.renderPagesForPrint(settings.pageRange, 200);
+      let pages: string[];
+      try {
+        pages = await viewer.renderPagesForPrint(settings.pageRange, 200);
+      } catch (err) {
+        showToast(`Print failed: the pages could not be rendered (${errorText(err)}). Try printing fewer pages at a time.`, true);
+        return;
+      }
       await printPages(pages, settings.printerName, settings.copies, settings.orientation, settings.fitMode);
       showToast("Sent to printer.");
     }
   } catch (err) {
-    showToast(`Print failed: ${err}`, true);
+    if (isPrintCancelled(err)) showToast("Printing cancelled.");
+    else showToast(`Print failed: ${errorText(err)}`, true);
   }
 });
 

@@ -1060,7 +1060,16 @@ input[type="color"].color-picker {
 }
 
 .toast.hidden { display: none; }
-.toast.error { border-color: #c0392b; color: #e74c3c; }
+.toast.error {
+  border-color: #c0392b;
+  color: #e74c3c;
+  /* Error messages carry a cause and a remedy: let users read, select and copy them */
+  max-width: min(640px, calc(100vw - 32px));
+  white-space: pre-line;
+  pointer-events: auto;
+  user-select: text;
+  cursor: pointer;
+}
 
 /* ── Context menu ────────────────────────────────────────────────────────── */
 

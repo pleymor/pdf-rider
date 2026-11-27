@@ -1,5 +1,6 @@
 import type { Translations } from "./i18n";
 import { listPrinters } from "./tauri-bridge";
+import { errorText } from "./print-errors";
 
 export interface PrintSettings {
   printerName: string;
@@ -23,6 +24,7 @@ export class PrintModal {
   private _i18nTitle = new Map<HTMLElement, keyof Translations>();
   private confirmHandlers: PrintHandler[] = [];
 
+  private savedNoPrintersText: string | null = null;
   private _pageCount = 1;
   private _currentPage = 1;
 
@@ -80,8 +82,13 @@ export class PrintModal {
           this.printerSelect.appendChild(opt);
         }
       }
-    } catch {
-      // Not running in Tauri (browser preview)
+    } catch (err) {
+      // Listing failed (or not running in Tauri): say why instead of "no printers"
+      const why = errorText(err);
+      if (why) {
+        this.savedNoPrintersText ??= this.noPrintersMsg.textContent;
+        this.noPrintersMsg.textContent = why;
+      }
       this.noPrintersMsg.classList.remove("hidden");
       this.printerSelect.style.display = "none";
       this.printBtn.disabled = true;
@@ -92,6 +99,11 @@ export class PrintModal {
 
   close(): void {
     this.backdrop.classList.add("hidden");
+    // Put back the translated "no printers" text replaced by an error message
+    if (this.savedNoPrintersText !== null) {
+      this.noPrintersMsg.textContent = this.savedNoPrintersText;
+      this.savedNoPrintersText = null;
+    }
   }
 
   private parsePageRange(): number[] {

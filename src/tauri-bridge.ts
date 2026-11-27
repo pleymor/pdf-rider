@@ -131,7 +131,11 @@ export async function listPrinters(): Promise<PrinterList> {
   return invoke<PrinterList>("list_printers");
 }
 
-/** Sends pre-rendered page images (base64 JPEG) to a printer. */
+/**
+ * Sends pre-rendered page images (base64 JPEG) to a printer (default printer
+ * when `printerName` is omitted). Rejects with a `PrintError`
+ * (`{ kind, message }`) whose message names the cause and the remedy.
+ */
 export async function printPages(
   pagesB64: string[],
   printerName?: string,
