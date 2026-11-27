@@ -44,6 +44,7 @@ type ToolbarEvent =
   | { type: "signature" }
   | { type: "pages" }
   | { type: "split" }
+  | { type: "merge" }
   | { type: "print" }
   | { type: "settings" }
   | { type: "undo" }
@@ -229,6 +230,7 @@ export class Toolbar {
           { label: "btnSave", shortcut: "Ctrl+S", action: () => this.emit({ type: "save" }), requiresDoc: true },
           { label: "btnSaveAs", shortcut: "Ctrl+Shift+S", action: () => this.emit({ type: "save-as" }), requiresDoc: true },
           { label: "btnCompress", shortcut: "Ctrl+Shift+E", action: () => this.emit({ type: "compress" }), requiresDoc: true },
+          { label: "menuMerge", action: () => this.emit({ type: "merge" }) },
           null,
           { label: "menuPrint", shortcut: "Ctrl+P", action: () => this.emit({ type: "print" }), requiresDoc: true },
           null,
