@@ -6,6 +6,11 @@ export async function openPdfDialog(): Promise<string | null> {
   return invoke<string | null>("open_pdf_dialog");
 }
 
+/** Opens a file-picker dialog allowing several PDF files. Returns the paths (empty if cancelled). */
+export async function openPdfsDialog(): Promise<string[]> {
+  return invoke<string[]>("open_pdfs_dialog");
+}
+
 /** Opens a Save As dialog. Returns the chosen path or null. */
 export async function savePdfDialog(
   currentPath: string
@@ -127,6 +132,20 @@ export async function splitPdf(
   ranges: SplitRange[],
 ): Promise<string[]> {
   return invoke<string[]>("split_pdf", { inputPath, outputDir, baseName, ranges });
+}
+
+/**
+ * Merges `inputPaths`, in that order, into a new PDF at `outputPath` (which
+ * may be one of the inputs). Resolves to the merged page count; rejects with
+ * a message naming the file at fault (invalid, encrypted, unwritable…).
+ */
+export async function mergePdfs(inputPaths: string[], outputPath: string): Promise<number> {
+  return invoke<number>("merge_pdfs", { inputPaths, outputPath });
+}
+
+/** Checks that a PDF can be merged; resolves to its page count, rejects with the reason. */
+export async function checkMergeInput(filePath: string): Promise<number> {
+  return invoke<number>("check_merge_input", { filePath });
 }
 
 /** Opens a folder-picker dialog. Returns the chosen path or null. */

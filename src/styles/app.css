@@ -1244,3 +1244,155 @@ input[type="color"].color-picker {
   font-size: 14px;
   text-align: center;
 }
+
+/* ── Merge modal ────────────────────────────────────────────────────────── */
+
+.merge-box {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+}
+
+.merge-hint,
+.merge-note {
+  margin: 0;
+  font-size: 12px;
+  color: #aaa;
+}
+
+.merge-note {
+  color: #e0b354;
+}
+
+.merge-note.hidden,
+.merge-list.hidden,
+.merge-empty.hidden {
+  display: none;
+}
+
+.merge-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.merge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  background: #262626;
+}
+
+.merge-row.has-error {
+  border-color: rgba(229, 115, 115, 0.6);
+}
+
+.merge-row.dragging {
+  background: #34404d;
+  border-color: #4a90d9;
+}
+
+.merge-handle {
+  cursor: grab;
+  color: #888;
+  letter-spacing: -3px;
+  padding: 4px 4px 4px 0;
+  user-select: none;
+  touch-action: none;
+}
+
+.merge-row.dragging .merge-handle {
+  cursor: grabbing;
+}
+
+.merge-index {
+  min-width: 20px;
+  text-align: right;
+  font-size: 12px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+.merge-file {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.merge-name {
+  font-size: 13px;
+  color: #e0e0e0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.merge-meta {
+  font-size: 11px;
+  color: #888;
+}
+
+.merge-meta.error {
+  color: #e57373;
+  white-space: normal;
+}
+
+.merge-row-btn {
+  flex-shrink: 0;
+}
+
+.merge-row-btn:disabled,
+.merge-box .btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+}
+
+.merge-empty {
+  padding: 20px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: #888;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+}
+
+.merge-summary {
+  font-size: 12px;
+  color: #aaa;
+  padding: 0 4px;
+  min-height: 16px;
+}
+
+.merge-summary.error {
+  color: #e57373;
+}
+
+.merge-footer-spacer {
+  flex: 1;
+}
+
+/* Welcome-screen tile that starts an action */
+button.welcome-feature-action {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+button.welcome-feature-action:hover {
+  border-color: rgba(74, 144, 217, 0.5);
+}
+
+button.welcome-feature-action:focus-visible {
+  outline: 2px solid #4a90d9;
+  outline-offset: 2px;
+}

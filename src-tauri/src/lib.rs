@@ -35,6 +35,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::compress::compress_pdf,
             commands::dialog::open_pdf_dialog,
+            commands::dialog::open_pdfs_dialog,
             commands::dialog::save_pdf_dialog,
             commands::dialog::pick_directory_dialog,
             commands::pdf::get_page_count,
@@ -44,6 +45,8 @@ pub fn run() {
             commands::pdf::modify_pages,
             commands::pdf::extract_pdf_pages,
             commands::pdf::split_pdf,
+            commands::pdf::merge_pdfs,
+            commands::pdf::check_merge_input,
             commands::print::list_printers,
             commands::print::print_pages,
             print_queue::take_print_jobs,

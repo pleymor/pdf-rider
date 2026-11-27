@@ -960,3 +960,24 @@ fn unique_path(dir: &std::path::Path, stem: &str, ext: &str) -> std::path::PathB
     }
     dir.join(format!("{stem}-conflict.{ext}"))
 }
+
+/// Merges `input_paths`, in that order, into a new PDF at `output_path`
+/// (which may be one of the inputs). Returns the merged page count.
+/// Runs off the main thread: large files take a while to load and write.
+#[tauri::command]
+pub async fn merge_pdfs(input_paths: Vec<String>, output_path: String) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::pdf::merge::merge_files(&input_paths, &output_path)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Checks that `file_path` can be merged (a readable, unencrypted PDF with
+/// pages) and returns its page count, or an error naming the file.
+#[tauri::command]
+pub async fn check_merge_input(file_path: String) -> Result<u32, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::pdf::merge::check_input(&file_path))
+        .await
+        .map_err(|e| e.to_string())?
+}

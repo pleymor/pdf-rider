@@ -22,6 +22,23 @@ pub fn open_pdf_dialog(app: AppHandle) -> Result<Option<String>, String> {
     Ok(result.map(filepath_to_string))
 }
 
+/// Opens a native file-picker dialog filtered to PDF files, allowing several
+/// files to be selected. Returns the selected paths (empty if cancelled).
+#[tauri::command]
+pub fn open_pdfs_dialog(app: AppHandle) -> Result<Vec<String>, String> {
+    let result = app
+        .dialog()
+        .file()
+        .add_filter("PDF Files", &["pdf"])
+        .blocking_pick_files();
+
+    Ok(result
+        .unwrap_or_default()
+        .into_iter()
+        .map(filepath_to_string)
+        .collect())
+}
+
 /// Opens a native Save As dialog.
 /// Pre-fills the filename from `current_path` basename.
 /// Returns the chosen absolute path, or null if cancelled.

@@ -151,6 +151,31 @@ export interface Translations {
   welcomeFeatCompressDesc?: string;
   welcomeFeatPrint?: string;
   welcomeFeatPrintDesc?: string;
+  // Merge modal
+  menuMerge?: string;
+  mergeTitle?: string;
+  mergeClose?: string;
+  mergeHint?: string;
+  mergeEmpty?: string;
+  mergeAddBtn?: string;
+  mergeCancelBtn?: string;
+  mergeApplyBtn?: string;
+  mergeMoveUp?: string;
+  mergeMoveDown?: string;
+  mergeRemove?: string;
+  mergeDragHandle?: string;
+  mergePages?: string;
+  mergeChecking?: string;
+  mergeTooFew?: string;
+  mergeCheckingAll?: string;
+  mergeHasErrors?: string;
+  mergeSummary?: string;
+  mergeBusy?: string;
+  mergeUnsavedNote?: string;
+  mergeDoneToast?: string;
+  mergeFailedToast?: string;
+  welcomeFeatMerge?: string;
+  welcomeFeatMergeDesc?: string;
 }
 
 // ── English ───────────────────────────────────────────────────────────────────
@@ -295,6 +320,30 @@ const EN: Translations = {
   welcomeFeatCompressDesc:  "Shrink file size",
   welcomeFeatPrint:         "Print",
   welcomeFeatPrintDesc:     "Select pages & printer",
+  menuMerge:            "Merge PDFs…",
+  mergeTitle:           "Merge PDFs",
+  mergeClose:           "Cancel",
+  mergeHint:            "Files are combined from top to bottom. Drag them or use the arrows to change the order.",
+  mergeEmpty:           "No files yet. Add PDF files, or drop them on this window.",
+  mergeAddBtn:          "Add Files…",
+  mergeCancelBtn:       "Cancel",
+  mergeApplyBtn:        "Merge & Save As…",
+  mergeMoveUp:          "Move up",
+  mergeMoveDown:        "Move down",
+  mergeRemove:          "Remove from the list",
+  mergeDragHandle:      "Drag to reorder",
+  mergePages:           "{n} page(s)",
+  mergeChecking:        "Checking…",
+  mergeTooFew:          "Add at least two PDF files.",
+  mergeCheckingAll:     "Checking files…",
+  mergeHasErrors:       "Remove the files that cannot be merged.",
+  mergeSummary:         "{files} files, {pages} pages in total.",
+  mergeBusy:            "Merging…",
+  mergeUnsavedNote:     "Unsaved changes to {name} are not included. Save them first to merge them.",
+  mergeDoneToast:       "Merged {files} files ({pages} pages) into {name}",
+  mergeFailedToast:     "Merge failed: {err}",
+  welcomeFeatMerge:     "Merge",
+  welcomeFeatMergeDesc: "Combine several PDFs",
 };
 
 // ── French ────────────────────────────────────────────────────────────────────
@@ -439,6 +488,30 @@ const FR: Translations = {
   welcomeFeatCompressDesc:  "R\u00e9duire la taille du fichier",
   welcomeFeatPrint:         "Imprimer",
   welcomeFeatPrintDesc:     "Choisir pages et imprimante",
+  menuMerge:            "Fusionner des PDF…",
+  mergeTitle:           "Fusionner des PDF",
+  mergeClose:           "Annuler",
+  mergeHint:            "Les fichiers sont assemblés de haut en bas. Faites-les glisser ou utilisez les flèches pour changer l'ordre.",
+  mergeEmpty:           "Aucun fichier. Ajoutez des PDF, ou déposez-les sur cette fenêtre.",
+  mergeAddBtn:          "Ajouter des fichiers…",
+  mergeCancelBtn:       "Annuler",
+  mergeApplyBtn:        "Fusionner et enregistrer sous…",
+  mergeMoveUp:          "Monter",
+  mergeMoveDown:        "Descendre",
+  mergeRemove:          "Retirer de la liste",
+  mergeDragHandle:      "Glisser pour réordonner",
+  mergePages:           "{n} page(s)",
+  mergeChecking:        "Vérification…",
+  mergeTooFew:          "Ajoutez au moins deux fichiers PDF.",
+  mergeCheckingAll:     "Vérification des fichiers…",
+  mergeHasErrors:       "Retirez les fichiers qui ne peuvent pas être fusionnés.",
+  mergeSummary:         "{files} fichiers, {pages} pages au total.",
+  mergeBusy:            "Fusion en cours…",
+  mergeUnsavedNote:     "Les modifications non enregistrées de {name} ne sont pas incluses. Enregistrez-les d'abord pour les fusionner.",
+  mergeDoneToast:       "{files} fichiers ({pages} pages) fusionnés dans {name}",
+  mergeFailedToast:     "Échec de la fusion : {err}",
+  welcomeFeatMerge:     "Fusionner",
+  welcomeFeatMergeDesc: "Combiner plusieurs PDF",
 };
 
 // ── Chinese (Mandarin) ────────────────────────────────────────────────────────

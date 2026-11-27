@@ -7,6 +7,8 @@ import { SignatureStore } from "./signature-store";
 import { SettingsModal } from "./settings";
 import { PageManagerModal } from "./page-manager";
 import { SplitModal } from "./split-modal";
+import { MergeModal } from "./merge-modal";
+import { fileNameOf, defaultMergedName } from "./merge-list";
 import { errorText, isPrintCancelled, describeLoadError } from "./print-errors";
 import { runPrintSession, failureReport, fileName } from "./print-session";
 import { getTranslations, applyTranslationsToDOM } from "./i18n";
@@ -35,6 +37,7 @@ import {
   extractPdfPages,
   modifyPages,
   splitPdf,
+  mergePdfs,
   pickDirectoryDialog,
 } from "./tauri-bridge";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -86,6 +89,7 @@ const sigModal           = new SignatureModal(sigStore);
 const settingsModal      = new SettingsModal();
 const pageManagerModal   = new PageManagerModal();
 const splitModal         = new SplitModal();
+const mergeModal         = new MergeModal();
 
 async function applyFitMode(): Promise<void> {
   if (!viewer.isLoaded() || fitMode === "none") return;
@@ -188,6 +192,7 @@ document.getElementById("viewer-scroll")!.addEventListener("focused-page-changed
   pageManagerModal.applyTranslations(t);
   printModal.applyTranslations(t);
   splitModal.applyTranslations(t);
+  mergeModal.applyTranslations(t);
   applyTranslationsToDOM(t);
 }
 settingsModal.onChange(s => {
@@ -197,6 +202,7 @@ settingsModal.onChange(s => {
   pageManagerModal.applyTranslations(t);
   printModal.applyTranslations(t);
   splitModal.applyTranslations(t);
+  mergeModal.applyTranslations(t);
   applyTranslationsToDOM(t);
 });
 
@@ -515,6 +521,42 @@ splitModal.onConfirm(async (req) => {
   }
 });
 
+// ── Merge ─────────────────────────────────────────────────────────────────────
+
+/** Opens the merge dialog, starting with the open document (as saved on disk). */
+function openMergeModal(): void {
+  const t = getTranslations(settingsModal.getSettings().language);
+  const note = filePath && isDirty
+    ? (t.mergeUnsavedNote ?? "Unsaved changes to {name} are not included. Save them first to merge them.")
+        .replace("{name}", fileNameOf(filePath))
+    : null;
+  mergeModal.open(filePath ? [filePath] : [], note);
+}
+
+mergeModal.setConfirmHandler(async (paths) => {
+  const t = getTranslations(settingsModal.getSettings().language);
+  const out = await savePdfDialog(defaultMergedName(paths));
+  if (!out) return false;
+  let pages: number;
+  try {
+    pages = await mergePdfs(paths, out);
+  } catch (err) {
+    const tmpl = t.mergeFailedToast ?? "Merge failed: {err}";
+    showToast(tmpl.replace("{err}", errorText(err)), true);
+    return false;
+  }
+  const tmpl = t.mergeDoneToast ?? "Merged {files} files ({pages} pages) into {name}";
+  showToast(tmpl
+    .replace("{files}", String(paths.length))
+    .replace("{pages}", String(pages))
+    .replace("{name}", fileNameOf(out)));
+  // Show the result; the current document goes through the usual unsaved-changes prompt.
+  if (await confirmUnsaved()) await loadPdf(out);
+  return true;
+});
+
+document.getElementById("welcome-merge-btn")?.addEventListener("click", () => openMergeModal());
+
 printModal.onConfirm(async (settings) => {
   if (!viewer.isLoaded() || !filePath) return;
   const isPdfPrinter = /print to pdf|pdf/i.test(settings.printerName);
@@ -592,6 +634,10 @@ toolbar.on(async (e) => {
       if (viewer.isLoaded() && filePath) {
         splitModal.open(viewer.pageCount);
       }
+      break;
+
+    case "merge":
+      openMergeModal();
       break;
 
     case "zoom-in":
@@ -908,6 +954,13 @@ document.getElementById("viewer-scroll")!.addEventListener("wheel", async (e: Wh
         document.body.classList.remove("drag-over");
       } else if (event.payload.type === "drop") {
         document.body.classList.remove("drag-over");
+        if (mergeModal.isOpen()) {
+          // Files dropped while merging are added to the list.
+          const pdfs = event.payload.paths.filter((p: string) => p.toLowerCase().endsWith(".pdf"));
+          if (pdfs.length > 0) mergeModal.addFiles(pdfs);
+          if (pdfs.length < event.payload.paths.length) showToast("Only PDF files can be merged.", true);
+          return;
+        }
         const pdfPath = event.payload.paths.find((p: string) => p.toLowerCase().endsWith(".pdf"));
         if (pdfPath) {
           if (await confirmUnsaved()) void loadPdf(pdfPath);
