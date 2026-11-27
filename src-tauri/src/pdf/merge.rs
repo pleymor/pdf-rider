@@ -13,7 +13,8 @@
 //!   outline root;
 //! - form fields: one `/AcroForm` listing every file's fields; a top-level
 //!   field whose name is already taken gets a `_2`, `_3`… suffix, so fields of
-//!   different files never share a value;
+//!   different files never share a value. An `/XFA` form is dropped (the
+//!   AcroForm fields of a hybrid form remain);
 //! - named destinations (and the links and bookmarks using them), optional
 //!   content groups, and PDF Rider's editable annotations (`CCAnnot`), whose
 //!   page numbers and stream ids follow the new numbering.
@@ -125,6 +126,8 @@ struct MergeState {
     outline_count: i64,
     acroform: Option<Dictionary>,
     fields: Vec<Object>,
+    /// `/CO`: calculation order of the fields of every file.
+    calc_order: Vec<Object>,
     field_names: HashSet<Vec<u8>>,
     /// `/Names /Dests` name tree entries (string keys), sorted.
     tree_dests: BTreeMap<Vec<u8>, Object>,
@@ -378,8 +381,11 @@ fn collect_named_dests(doc: &mut Document, st: &mut MergeState, catalog: &Dictio
             rename(dest);
         }
         if let Ok(Object::Dictionary(action)) = d.get_mut(b"A") {
-            if let Ok(dest) = action.get_mut(b"D") {
-                rename(dest);
+            // Only GoTo: a GoToR /D names a destination in another file.
+            if action.get(b"S").and_then(Object::as_name).ok() == Some(b"GoTo".as_slice()) {
+                if let Ok(dest) = action.get_mut(b"D") {
+                    rename(dest);
+                }
             }
         }
         if d.get(b"S").and_then(Object::as_name).ok() == Some(b"GoTo".as_slice()) {
@@ -456,10 +462,15 @@ fn collect_form(doc: &mut Document, st: &mut MergeState, catalog: &Dictionary) {
         st.fields.push(field);
     }
 
+    st.calc_order.extend(deref_array(doc, form.get(b"CO").ok()));
+
     let dr = deref_dict(doc, form.get(b"DR").ok()).map(|d| inline_resources(doc, d));
     let merged = st.acroform.get_or_insert_with(Dictionary::new);
+    // /XFA is left out: an XFA-aware viewer would show that one file's XFA
+    // form in place of the merged fields.
+    const REBUILT: [&[u8]; 4] = [b"Fields", b"DR", b"CO", b"XFA"];
     for (key, value) in form.iter() {
-        if key.as_slice() != b"Fields" && key.as_slice() != b"DR" && !merged.has(key) {
+        if !REBUILT.contains(&key.as_slice()) && !merged.has(key) {
             merged.set(key.clone(), value.clone());
         }
     }
@@ -541,6 +552,9 @@ fn finish(out: &mut Document, st: MergeState, pages_id: ObjectId) -> Result<(), 
 
     if let Some(mut form) = st.acroform {
         form.set("Fields", st.fields);
+        if !st.calc_order.is_empty() {
+            form.set("CO", st.calc_order);
+        }
         catalog.set("AcroForm", form);
     }
 
@@ -1031,10 +1045,13 @@ mod tests {
         });
         doc.get_object_mut(page).unwrap().as_dict_mut().unwrap()
             .set("Annots", vec![Object::Reference(field)]);
+        let xfa = doc.add_object(Stream::new(dictionary! {}, b"<xdp:xdp/>".to_vec()));
         let form = doc.add_object(dictionary! {
             "Fields" => vec![Object::Reference(field)],
+            "CO" => vec![Object::Reference(field)],
             "DA" => Object::string_literal("/Helv 0 Tf 0 g"),
             "DR" => dictionary! { "Font" => dictionary! { "Helv" => font } },
+            "XFA" => xfa,
         });
         catalog_mut(doc).set("AcroForm", form);
     }
@@ -1070,6 +1087,10 @@ mod tests {
         let fonts = form.get(b"DR").unwrap().as_dict().unwrap().get(b"Font").unwrap();
         let fonts = match fonts { Object::Reference(id) => merged.get_dictionary(*id).unwrap(), o => o.as_dict().unwrap() };
         assert!(fonts.get(b"Helv").is_ok());
+        // An XFA form would replace the merged fields in Acrobat: it is dropped.
+        assert!(form.get(b"XFA").is_err());
+        // The calculation order lists the fields of every file.
+        assert_eq!(form.get(b"CO").unwrap().as_array().unwrap().len(), 2);
     }
 
     /// Adds a named destination `name` → `page`, and a link on `page` to it.
@@ -1108,6 +1129,20 @@ mod tests {
         add_named_dest_and_link(&mut a, "page.1", la[0]);
         let (mut b, lb) = simple(A5, 0, &["B1"]);
         add_named_dest_and_link(&mut b, "page.1", lb[0]);
+        // A link to another file's "page.1" must not follow the rename.
+        let remote = b.add_object(dictionary! {
+            "Type" => "Annot",
+            "Subtype" => "Link",
+            "Rect" => vec![0.into(), 20.into(), 10.into(), 30.into()],
+            "A" => dictionary! {
+                "S" => "GoToR",
+                "F" => Object::string_literal("other.pdf"),
+                "D" => Object::string_literal("page.1"),
+            },
+        });
+        if let Ok(Object::Array(annots)) = b.get_object_mut(lb[0]).unwrap().as_dict_mut().unwrap().get_mut(b"Annots") {
+            annots.push(Object::Reference(remote));
+        }
         let (pa, pb) = (dir.path("a.pdf"), dir.path("b.pdf"));
         save(&mut a, &pa);
         save(&mut b, &pb);
@@ -1122,6 +1157,9 @@ mod tests {
         let annots = merged.get_dictionary(pages[&2]).unwrap().get(b"Annots").unwrap().as_array().unwrap();
         let link = merged.get_dictionary(annots[0].as_reference().unwrap()).unwrap();
         assert_eq!(text(link.get(b"Dest").unwrap()), "page.1_2");
+        let remote = merged.get_dictionary(annots[1].as_reference().unwrap()).unwrap();
+        let action = remote.get(b"A").unwrap().as_dict().unwrap();
+        assert_eq!(text(action.get(b"D").unwrap()), "page.1");
     }
 
     #[test]
